@@ -8,6 +8,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.PropertiesPropertySource;
 
+import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -16,6 +17,7 @@ import java.util.Properties;
 /**
  * Configuration class that loads AWS credentials from a properties file
  * and updates the Spring Environment with these values.
+ * Not used in test profile as tests use mock clients.
  */
 @Configuration
 @Profile("!test")
@@ -32,7 +34,18 @@ public class AwsCredentialsLoader {
     };
 
     /**
+     * Loads AWS credentials from a file during bean initialization.
+     * This ensures credentials are available before other beans that need them are initialized.
+     */
+    @PostConstruct
+    public void init() {
+        loadAwsCredentialsIntoEnvironment();
+        System.out.println("AWS credentials loaded at application startup");
+    }
+
+    /**
      * Loads AWS credentials from a file when the application context is refreshed.
+     * This serves as a backup in case credentials weren't loaded during initialization.
      */
     @EventListener
     public void onApplicationEvent(ContextRefreshedEvent event) {
