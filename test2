@@ -1,9 +1,7 @@
 
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
-import java.util.Date;
 
 @DynamoDbBean
-@DynamoDbTable(tableName = "Orders")
 public class OrderEntity {
 
     private String cifKey;                 // Partition Key
@@ -13,10 +11,10 @@ public class OrderEntity {
     private String debitAccountNumberHash;
     private String debitAccountNumber;
     private String transactionIdHash;
-    private String executionDate;
-    private String channelId;
-    
-    // Example of other attributes
+    private String executionDate;          // LSI
+    private String channelId;              // LSI
+
+    // Other example attributes
     private String status;
     private Double amount;
 
@@ -53,10 +51,10 @@ public class OrderEntity {
     public void setTransactionIdHash(String transactionIdHash) { this.transactionIdHash = transactionIdHash; }
 
     @DynamoDbSecondarySortKey(indexNames = {"GSI3"})
-    public String getTransactionIdForGSI() { return transactionId; } // reuse primary key for GSI
+    public String getTransactionIdForGSI() { return transactionId; } // reuse primary key
     public void setTransactionIdForGSI(String transactionId) { this.transactionId = transactionId; }
 
-    // ===================== LSI =====================
+    // ===================== LSIs =====================
     @DynamoDbSecondarySortKey(indexNames = {"LSI_ExecutionDate"})
     public String getExecutionDate() { return executionDate; }
     public void setExecutionDate(String executionDate) { this.executionDate = executionDate; }
@@ -71,8 +69,8 @@ public class OrderEntity {
 
     public Double getAmount() { return amount; }
     public void setAmount(Double amount) { this.amount = amount; }
-
 }
+
 
 
 ===================
