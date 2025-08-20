@@ -1,3 +1,82 @@
+
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
+import java.util.Date;
+
+@DynamoDbBean
+@DynamoDbTable(tableName = "Orders")
+public class OrderEntity {
+
+    private String cifKey;                 // Partition Key
+    private String transactionId;          // Sort Key
+    private String creditAccountNumberHash;
+    private String creditAccountNumber;
+    private String debitAccountNumberHash;
+    private String debitAccountNumber;
+    private String transactionIdHash;
+    private String executionDate;
+    private String channelId;
+    
+    // Example of other attributes
+    private String status;
+    private Double amount;
+
+    // ===================== Primary Key =====================
+    @DynamoDbPartitionKey
+    public String getCifKey() { return cifKey; }
+    public void setCifKey(String cifKey) { this.cifKey = cifKey; }
+
+    @DynamoDbSortKey
+    public String getTransactionId() { return transactionId; }
+    public void setTransactionId(String transactionId) { this.transactionId = transactionId; }
+
+    // ===================== GSI1 =====================
+    @DynamoDbSecondaryPartitionKey(indexNames = {"GSI1"})
+    public String getCreditAccountNumberHash() { return creditAccountNumberHash; }
+    public void setCreditAccountNumberHash(String creditAccountNumberHash) { this.creditAccountNumberHash = creditAccountNumberHash; }
+
+    @DynamoDbSecondarySortKey(indexNames = {"GSI1"})
+    public String getCreditAccountNumber() { return creditAccountNumber; }
+    public void setCreditAccountNumber(String creditAccountNumber) { this.creditAccountNumber = creditAccountNumber; }
+
+    // ===================== GSI2 =====================
+    @DynamoDbSecondaryPartitionKey(indexNames = {"GSI2"})
+    public String getDebitAccountNumberHash() { return debitAccountNumberHash; }
+    public void setDebitAccountNumberHash(String debitAccountNumberHash) { this.debitAccountNumberHash = debitAccountNumberHash; }
+
+    @DynamoDbSecondarySortKey(indexNames = {"GSI2"})
+    public String getDebitAccountNumber() { return debitAccountNumber; }
+    public void setDebitAccountNumber(String debitAccountNumber) { this.debitAccountNumber = debitAccountNumber; }
+
+    // ===================== GSI3 =====================
+    @DynamoDbSecondaryPartitionKey(indexNames = {"GSI3"})
+    public String getTransactionIdHash() { return transactionIdHash; }
+    public void setTransactionIdHash(String transactionIdHash) { this.transactionIdHash = transactionIdHash; }
+
+    @DynamoDbSecondarySortKey(indexNames = {"GSI3"})
+    public String getTransactionIdForGSI() { return transactionId; } // reuse primary key for GSI
+    public void setTransactionIdForGSI(String transactionId) { this.transactionId = transactionId; }
+
+    // ===================== LSI =====================
+    @DynamoDbSecondarySortKey(indexNames = {"LSI_ExecutionDate"})
+    public String getExecutionDate() { return executionDate; }
+    public void setExecutionDate(String executionDate) { this.executionDate = executionDate; }
+
+    @DynamoDbSecondarySortKey(indexNames = {"LSI_ChannelId"})
+    public String getChannelId() { return channelId; }
+    public void setChannelId(String channelId) { this.channelId = channelId; }
+
+    // ===================== Other attributes =====================
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public Double getAmount() { return amount; }
+    public void setAmount(Double amount) { this.amount = amount; }
+
+}
+
+
+===================
+
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 import software.amazon.awssdk.regions.Region;
