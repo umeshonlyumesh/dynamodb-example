@@ -1,4 +1,155 @@
 
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/orders")
+public class OrderController {
+
+    private final OrderService orderService;
+
+    public OrderController(OrderService orderService) {
+        this.orderService = orderService;
+    }
+
+    // ================= CRUD =================
+    @PostMapping
+    public void createOrder(@RequestBody OrderEntity order) {
+        orderService.saveOrder(order);
+    }
+
+    @GetMapping("/{cifKey}/{transactionId}")
+    public OrderEntity getOrder(@PathVariable String cifKey, @PathVariable String transactionId) {
+        return orderService.getOrder(cifKey, transactionId);
+    }
+
+    @DeleteMapping("/{cifKey}/{transactionId}")
+    public void deleteOrder(@PathVariable String cifKey, @PathVariable String transactionId) {
+        orderService.deleteOrder(cifKey, transactionId);
+    }
+
+    // ================= GSI Queries =================
+    @GetMapping("/credit")
+    public List<OrderEntity> getByCredit(@RequestParam String creditHash,
+                                         @RequestParam String creditNumber) {
+        return orderService.getByCreditAccount(creditHash, creditNumber);
+    }
+
+    @GetMapping("/debit")
+    public List<OrderEntity> getByDebit(@RequestParam String debitHash,
+                                        @RequestParam String debitNumber) {
+        return orderService.getByDebitAccount(debitHash, debitNumber);
+    }
+
+    @GetMapping("/transaction")
+    public List<OrderEntity> getByTransaction(@RequestParam String transactionHash,
+                                              @RequestParam String transactionId) {
+        return orderService.getByTransactionHash(transactionHash, transactionId);
+    }
+
+    // ================= LSI Queries =================
+    @GetMapping("/executionDate")
+    public List<OrderEntity> getByExecutionDate(@RequestParam String cifKey,
+                                                @RequestParam String executionDate) {
+        return orderService.getByExecutionDate(cifKey, executionDate);
+    }
+
+    @GetMapping("/channel")
+    public List<OrderEntity> getByChannel(@RequestParam String cifKey,
+                                          @RequestParam String channelId) {
+        return orderService.getByChannelId(cifKey, channelId);
+    }
+}
+
+==============================
+import org.springframework.stereotype.Service;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@Service
+public class OrderService {
+
+    private final DynamoDbTable<OrderEntity> orderTable;
+
+    public OrderService(DynamoDbTable<OrderEntity> orderTable) {
+        this.orderTable = orderTable;
+    }
+
+    // ================= CRUD =================
+    public void saveOrder(OrderEntity order) {
+        orderTable.putItem(order);
+    }
+
+    public OrderEntity getOrder(String cifKey, String transactionId) {
+        return orderTable.getItem(r -> r.key(k -> k.partitionValue(cifKey).sortValue(transactionId)));
+    }
+
+    public void deleteOrder(String cifKey, String transactionId) {
+        orderTable.deleteItem(r -> r.key(k -> k.partitionValue(cifKey).sortValue(transactionId)));
+    }
+
+    // ================= Query by GSI1 (credit accounts) =================
+    public List<OrderEntity> getByCreditAccount(String creditHash, String creditNumber) {
+        List<OrderEntity> results = new ArrayList<>();
+        orderTable.index("GSI1")
+                .query(r -> r.queryConditional(
+                        QueryConditional.keyEqualTo(k -> k.partitionValue(creditHash).sortValue(creditNumber))
+                ))
+                .items().forEach(results::add);
+        return results;
+    }
+
+    // ================= Query by GSI2 (debit accounts) =================
+    public List<OrderEntity> getByDebitAccount(String debitHash, String debitNumber) {
+        List<OrderEntity> results = new ArrayList<>();
+        orderTable.index("GSI2")
+                .query(r -> r.queryConditional(
+                        QueryConditional.keyEqualTo(k -> k.partitionValue(debitHash).sortValue(debitNumber))
+                ))
+                .items().forEach(results::add);
+        return results;
+    }
+
+    // ================= Query by GSI3 (transaction hash) =================
+    public List<OrderEntity> getByTransactionHash(String transactionHash, String transactionId) {
+        List<OrderEntity> results = new ArrayList<>();
+        orderTable.index("GSI3")
+                .query(r -> r.queryConditional(
+                        QueryConditional.keyEqualTo(k -> k.partitionValue(transactionHash).sortValue(transactionId))
+                ))
+                .items().forEach(results::add);
+        return results;
+    }
+
+    // ================= Query by LSI Execution Date =================
+    public List<OrderEntity> getByExecutionDate(String cifKey, String executionDate) {
+        List<OrderEntity> results = new ArrayList<>();
+        orderTable.index("LSI_ExecutionDate")
+                .query(r -> r.queryConditional(
+                        QueryConditional.keyEqualTo(k -> k.partitionValue(cifKey).sortValue(executionDate))
+                ))
+                .items().forEach(results::add);
+        return results;
+    }
+
+    // ================= Query by LSI ChannelId =================
+    public List<OrderEntity> getByChannelId(String cifKey, String channelId) {
+        List<OrderEntity> results = new ArrayList<>();
+        orderTable.index("LSI_ChannelId")
+                .query(r -> r.queryConditional(
+                        QueryConditional.keyEqualTo(k -> k.partitionValue(cifKey).sortValue(channelId))
+                ))
+                .items().forEach(results::add);
+        return results;
+    }
+}
+
+
+========================
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 
 @DynamoDbBean
