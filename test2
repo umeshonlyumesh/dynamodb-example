@@ -1,3 +1,128 @@
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.*;
+import software.amazon.awssdk.regions.Region;
+
+import java.util.Arrays;
+
+public class DynamoDBTableCreator {
+
+    public static void main(String[] args) {
+        DynamoDbClient ddb = DynamoDbClient.builder()
+                .region(Region.US_EAST_1) // change region if needed
+                .build();
+
+        String tableName = "Orders";
+
+        CreateTableRequest request = CreateTableRequest.builder()
+                .tableName(tableName)
+                .keySchema(
+                        KeySchemaElement.builder()
+                                .attributeName("cifKey")
+                                .keyType(KeyType.HASH) // Partition key
+                                .build(),
+                        KeySchemaElement.builder()
+                                .attributeName("transactionId")
+                                .keyType(KeyType.RANGE) // Sort key
+                                .build()
+                )
+                .attributeDefinitions(
+                        AttributeDefinition.builder()
+                                .attributeName("cifKey")
+                                .attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder()
+                                .attributeName("transactionId")
+                                .attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder()
+                                .attributeName("creditAccountNumberHash")
+                                .attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder()
+                                .attributeName("creditAccountNumber")
+                                .attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder()
+                                .attributeName("debitAccountNumberHash")
+                                .attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder()
+                                .attributeName("debitAccountNumber")
+                                .attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder()
+                                .attributeName("transactionIdHash")
+                                .attributeType(ScalarAttributeType.S).build()
+                )
+                .provisionedThroughput(
+                        ProvisionedThroughput.builder()
+                                .readCapacityUnits(5L)
+                                .writeCapacityUnits(5L)
+                                .build()
+                )
+                .globalSecondaryIndexes(
+                        GlobalSecondaryIndex.builder()
+                                .indexName("GSI1")
+                                .keySchema(
+                                        KeySchemaElement.builder()
+                                                .attributeName("creditAccountNumberHash")
+                                                .keyType(KeyType.HASH).build(),
+                                        KeySchemaElement.builder()
+                                                .attributeName("creditAccountNumber")
+                                                .keyType(KeyType.RANGE).build()
+                                )
+                                .projection(Projection.builder()
+                                        .projectionType(ProjectionType.ALL).build())
+                                .provisionedThroughput(ProvisionedThroughput.builder()
+                                        .readCapacityUnits(5L)
+                                        .writeCapacityUnits(5L)
+                                        .build())
+                                .build(),
+
+                        GlobalSecondaryIndex.builder()
+                                .indexName("GSI2")
+                                .keySchema(
+                                        KeySchemaElement.builder()
+                                                .attributeName("debitAccountNumberHash")
+                                                .keyType(KeyType.HASH).build(),
+                                        KeySchemaElement.builder()
+                                                .attributeName("debitAccountNumber")
+                                                .keyType(KeyType.RANGE).build()
+                                )
+                                .projection(Projection.builder()
+                                        .projectionType(ProjectionType.ALL).build())
+                                .provisionedThroughput(ProvisionedThroughput.builder()
+                                        .readCapacityUnits(5L)
+                                        .writeCapacityUnits(5L)
+                                        .build())
+                                .build(),
+
+                        GlobalSecondaryIndex.builder()
+                                .indexName("GSI3")
+                                .keySchema(
+                                        KeySchemaElement.builder()
+                                                .attributeName("transactionIdHash")
+                                                .keyType(KeyType.HASH).build(),
+                                        KeySchemaElement.builder()
+                                                .attributeName("transactionId")
+                                                .keyType(KeyType.RANGE).build()
+                                )
+                                .projection(Projection.builder()
+                                        .projectionType(ProjectionType.ALL).build())
+                                .provisionedThroughput(ProvisionedThroughput.builder()
+                                        .readCapacityUnits(5L)
+                                        .writeCapacityUnits(5L)
+                                        .build())
+                                .build()
+                )
+                .build();
+
+        try {
+            ddb.createTable(request);
+            System.out.println("Table created successfully: " + tableName);
+        } catch (ResourceInUseException e) {
+            System.out.println("Table already exists: " + tableName);
+        }
+    }
+}
+
+
+===========================================
+
 package com.example.orders.repository;
 
 import com.amazonaws.services.dynamodbv2.datamodeling.*;
