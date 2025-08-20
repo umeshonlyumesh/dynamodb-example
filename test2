@@ -1,0 +1,195 @@
+package com.example.orders.repository;
+
+import com.amazonaws.services.dynamodbv2.datamodeling.*;
+import com.amazonaws.services.dynamodbv2.model.AttributeValue;
+import com.example.orders.model.OrderEntity;
+import org.springframework.stereotype.Repository;
+
+import java.util.*;
+
+@Repository
+public class OrderRepository {
+
+    private final DynamoDBMapper mapper;
+
+    public OrderRepository(DynamoDBMapper mapper) {
+        this.mapper = mapper;
+    }
+
+    // 1. Get by Customer + TransactionId
+    public OrderEntity getByCifAndTransactionId(String cifKey, String transactionId) {
+        return mapper.load(OrderEntity.class, cifKey, transactionId);
+    }
+
+    // 2. Get by Customer (all orders)
+    public List<OrderEntity> getByCif(String cifKey) {
+        Map<String, AttributeValue> eav = new HashMap<>();
+        eav.put(":v1", new AttributeValue().withS(cifKey));
+
+        DynamoDBQueryExpression<OrderEntity> query = new DynamoDBQueryExpression<OrderEntity>()
+                .withKeyConditionExpression("cifKey = :v1")
+                .withExpressionAttributeValues(eav);
+
+        return mapper.query(OrderEntity.class, query);
+    }
+
+    // 3. Get by Customer + ExecutionDate range
+    public List<OrderEntity> getByCifAndExecutionDate(String cifKey, String start, String end) {
+        Map<String, AttributeValue> eav = new HashMap<>();
+        eav.put(":cif", new AttributeValue().withS(cifKey));
+        eav.put(":start", new AttributeValue().withS(start));
+        eav.put(":end", new AttributeValue().withS(end));
+
+        DynamoDBQueryExpression<OrderEntity> query = new DynamoDBQueryExpression<OrderEntity>()
+                .withKeyConditionExpression("cifKey = :cif and executionDate BETWEEN :start AND :end")
+                .withExpressionAttributeValues(eav);
+
+        return mapper.query(OrderEntity.class, query);
+    }
+
+    // 4. By Credit Account (GSI1)
+    public List<OrderEntity> getByCreditAccount(String creditHash, String creditNumber) {
+        Map<String, AttributeValue> eav = new HashMap<>();
+        eav.put(":h", new AttributeValue().withS(creditHash));
+        eav.put(":n", new AttributeValue().withS(creditNumber));
+
+        DynamoDBQueryExpression<OrderEntity> query = new DynamoDBQueryExpression<OrderEntity>()
+                .withIndexName("GSI1")
+                .withConsistentRead(false)
+                .withKeyConditionExpression("creditAccountNumberHash = :h and creditAccountNumber = :n")
+                .withExpressionAttributeValues(eav);
+
+        return mapper.query(OrderEntity.class, query);
+    }
+
+    // 5. By Debit Account (GSI2)
+    public List<OrderEntity> getByDebitAccount(String debitHash, String debitNumber) {
+        Map<String, AttributeValue> eav = new HashMap<>();
+        eav.put(":h", new AttributeValue().withS(debitHash));
+        eav.put(":n", new AttributeValue().withS(debitNumber));
+
+        DynamoDBQueryExpression<OrderEntity> query = new DynamoDBQueryExpression<OrderEntity>()
+                .withIndexName("GSI2")
+                .withConsistentRead(false)
+                .withKeyConditionExpression("debitAccountNumberHash = :h and debitAccountNumber = :n")
+                .withExpressionAttributeValues(eav);
+
+        return mapper.query(OrderEntity.class, query);
+    }
+
+    // 6. By TransactionId (Payment Reference) (GSI3)
+    public List<OrderEntity> getByTransactionId(String txnHash, String txnId) {
+        Map<String, AttributeValue> eav = new HashMap<>();
+        eav.put(":h", new AttributeValue().withS(txnHash));
+        eav.put(":t", new AttributeValue().withS(txnId));
+
+        DynamoDBQueryExpression<OrderEntity> query = new DynamoDBQueryExpression<OrderEntity>()
+                .withIndexName("GSI3")
+                .withConsistentRead(false)
+                .withKeyConditionExpression("transactionIdHash = :h and transactionId = :t")
+                .withExpressionAttributeValues(eav);
+
+        return mapper.query(OrderEntity.class, query);
+    }
+}
+
+============================================package com.example.orders.service;
+
+import com.example.orders.model.OrderEntity;
+import com.example.orders.repository.OrderRepository;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class OrderService {
+
+    private final OrderRepository repo;
+
+    public OrderService(OrderRepository repo) {
+        this.repo = repo;
+    }
+
+    public OrderEntity getByCifAndTransactionId(String cifKey, String transactionId) {
+        return repo.getByCifAndTransactionId(cifKey, transactionId);
+    }
+
+    public List<OrderEntity> getByCif(String cifKey) {
+        return repo.getByCif(cifKey);
+    }
+
+    public List<OrderEntity> getByCifAndExecutionDate(String cifKey, String start, String end) {
+        return repo.getByCifAndExecutionDate(cifKey, start, end);
+    }
+
+    public List<OrderEntity> getByCreditAccount(String hash, String number) {
+        return repo.getByCreditAccount(hash, number);
+    }
+
+    public List<OrderEntity> getByDebitAccount(String hash, String number) {
+        return repo.getByDebitAccount(hash, number);
+    }
+
+    public List<OrderEntity> getByTransactionId(String hash, String txnId) {
+        return repo.getByTransactionId(hash, txnId);
+    }
+}
+
+==============================
+package com.example.orders.controller;
+
+import com.example.orders.model.OrderEntity;
+import com.example.orders.service.OrderService;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/orders")
+public class OrderController {
+
+    private final OrderService service;
+
+    public OrderController(OrderService service) {
+        this.service = service;
+    }
+
+    // 1. By Customer + TransactionId
+    @GetMapping("/{cifKey}/{transactionId}")
+    public OrderEntity getByCifAndTransactionId(@PathVariable String cifKey, @PathVariable String transactionId) {
+        return service.getByCifAndTransactionId(cifKey, transactionId);
+    }
+
+    // 2. By Customer
+    @GetMapping("/{cifKey}")
+    public List<OrderEntity> getByCif(@PathVariable String cifKey) {
+        return service.getByCif(cifKey);
+    }
+
+    // 3. By Customer + ExecutionDate range
+    @GetMapping("/{cifKey}/date-range")
+    public List<OrderEntity> getByCifAndExecutionDate(
+            @PathVariable String cifKey,
+            @RequestParam String start,
+            @RequestParam String end) {
+        return service.getByCifAndExecutionDate(cifKey, start, end);
+    }
+
+    // 4. By Credit Account
+    @GetMapping("/credit")
+    public List<OrderEntity> getByCredit(@RequestParam String hash, @RequestParam String number) {
+        return service.getByCreditAccount(hash, number);
+    }
+
+    // 5. By Debit Account
+    @GetMapping("/debit")
+    public List<OrderEntity> getByDebit(@RequestParam String hash, @RequestParam String number) {
+        return service.getByDebitAccount(hash, number);
+    }
+
+    // 6. By TransactionId
+    @GetMapping("/txn")
+    public List<OrderEntity> getByTransactionId(@RequestParam String hash, @RequestParam String txnId) {
+        return service.getByTransactionId(hash, txnId);
+    }
+}
