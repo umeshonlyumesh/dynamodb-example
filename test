@@ -6,7 +6,8 @@ participant "Qualification Plugin" as Qual
 participant "Posting Plugin" as Post
 participant "Fraud Plugin" as Fraud
 participant "Alert Plugin" as Alert
-queue "Kafka Topic" as Kafka
+queue "Kafka Topic (PE->IO)" as KafkaIn
+queue "Kafka Topic (IO->PE)" as KafkaOut
 participant CIF
 participant Deposit
 participant IFMX
@@ -38,10 +39,28 @@ alt Synchronous Flow
 end
 
 alt Asynchronous Flow
-    IO -> Kafka: Publish Event (Async Payload)
-    Kafka -> CIF: Notify CIF System
-    Kafka -> Deposit: Notify Deposit System
-    Kafka -> IFMX: Notify Fraud System
-    Kafka -> Titan: Notify Alert System
+    PE -> KafkaIn: Publish Payment Payload
+    IO <- KafkaIn: Listener consumes Payload
+    
+    IO -> Qual: Validate, Enrich, Balance Check
+    Qual -> CIF: Fetch CIF & Balance
+    CIF --> Qual: CIF Details
+    Qual --> IO: Enriched Payload
+    
+    IO -> Post: Deposit Posting
+    Post -> Deposit: Post Transaction
+    Deposit --> Post: Success/Failure
+    
+    IO -> Fraud: Fraud Check
+    Fraud -> IFMX: Fraud Validation
+    IFMX --> Fraud: Result
+    
+    IO -> Alert: Trigger Alert
+    Alert -> Titan: Send Notification
+    Titan --> Alert: Ack
+    
+    IO -> KafkaOut: Publish Final Response
+    PE <- KafkaOut: Listener consumes Response
+    PE --> Client: Send Payment Result Ack
 end
 @enduml
