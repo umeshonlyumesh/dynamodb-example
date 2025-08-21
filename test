@@ -1,133 +1,47 @@
-import com.amazonaws.services.dynamodbv2.datamodeling.*;
+@startuml
+actor Client
+participant "Payment Engine" as PE
+participant "Integration Orchestration MS" as IO
+participant "Qualification Plugin" as Qual
+participant "Posting Plugin" as Post
+participant "Fraud Plugin" as Fraud
+participant "Alert Plugin" as Alert
+queue "Kafka Topic" as Kafka
+participant CIF
+participant Deposit
+participant IFMX
+participant Titan
 
-@DynamoDBTable(tableName = "Orders")
-public class OrderEntity {
+Client -> PE: Initiate Payment (Request)
+PE -> IO: Send Common Payload
 
-    @DynamoDBHashKey(attributeName = "cifKey")
-    private String cifKey;
+alt Synchronous Flow
+    IO -> Qual: Validate, Enrich, Balance Check
+    Qual -> CIF: Fetch CIF & Balance
+    CIF --> Qual: CIF Details
+    Qual --> IO: Enriched Payload
+    
+    IO -> Post: Deposit Posting
+    Post -> Deposit: Post Transaction
+    Deposit --> Post: Success/Failure
+    
+    IO -> Fraud: Fraud Check
+    Fraud -> IFMX: Fraud Validation
+    IFMX --> Fraud: Result
+    
+    IO -> Alert: Trigger Alert
+    Alert -> Titan: Send Notification
+    Titan --> Alert: Ack
+    
+    IO --> PE: Aggregated Response
+    PE --> Client: Payment Result
+end
 
-    @DynamoDBRangeKey(attributeName = "transactionId")
-    private String transactionId;
-
-    private String debitAccountNumberHash;
-    private String debitAccountNumber;
-    private String creditAccountNumberHash;
-    private String creditAccountNumber;
-    private String transactionIdHash;
-    private String executionDate;
-    private String lob;
-    private String state;
-    private String channelId;
-    private String data;
-    private String version;
-
-    @DynamoDBIndexHashKey(globalSecondaryIndexName = "GSI1", attributeName = "creditAccountNumberHash")
-    @DynamoDBIndexRangeKey(globalSecondaryIndexName = "GSI1", attributeName = "creditAccountNumber")
-    private String gsi1;
-
-    @DynamoDBIndexHashKey(globalSecondaryIndexName = "GSI2", attributeName = "debitAccountNumberHash")
-    @DynamoDBIndexRangeKey(globalSecondaryIndexName = "GSI2", attributeName = "debitAccountNumber")
-    private String gsi2;
-
-    @DynamoDBIndexHashKey(globalSecondaryIndexName = "GSI3", attributeName = "transactionIdHash")
-    @DynamoDBIndexRangeKey(globalSecondaryIndexName = "GSI3", attributeName = "transactionId")
-    private String gsi3;
-
-    // getters and setters
-}
-
-
-==========================================
-
-import org.socialsignin.spring.data.dynamodb.repository.EnableScan;
-import org.springframework.data.repository.CrudRepository;
-import java.util.List;
-
-@EnableScan
-public interface OrderRepository extends CrudRepository<OrderEntity, String> {
-
-    List<OrderEntity> findByCifKey(String cifKey);
-    List<OrderEntity> findByCifKeyAndTransactionIdBetween(String cifKey, String start, String end);
-
-    List<OrderEntity> findByCreditAccountNumberHashAndCreditAccountNumber(String hash, String number);
-    List<OrderEntity> findByDebitAccountNumberHashAndDebitAccountNumber(String hash, String number);
-    List<OrderEntity> findByTransactionIdHashAndTransactionId(String hash, String txnId);
-
-    List<OrderEntity> findByCifKeyAndExecutionDateBetween(String cifKey, String start, String end);
-    List<OrderEntity> findByCifKeyAndLob(String cifKey, String lob);
-    List<OrderEntity> findByCifKeyAndState(String cifKey, String state);
-    List<OrderEntity> findByCifKeyAndChannelId(String cifKey, String channelId);
-}
-
-================================================
-
-import org.springframework.web.bind.annotation.*;
-import java.util.List;
-
-@RestController
-@RequestMapping("/orders")
-public class OrderController {
-
-    private final OrderRepository repository;
-
-    public OrderController(OrderRepository repository) {
-        this.repository = repository;
-    }
-
-    @PostMapping
-    public OrderEntity saveOrder(@RequestBody OrderEntity order) {
-        return repository.save(order);
-    }
-
-    @GetMapping("/byCustomer/{cifKey}")
-    public List<OrderEntity> getByCustomer(@PathVariable String cifKey) {
-        return repository.findByCifKey(cifKey);
-    }
-
-    @GetMapping("/byCustomer/{cifKey}/dateRange")
-    public List<OrderEntity> getByCustomerAndDateRange(
-            @PathVariable String cifKey,
-            @RequestParam String start,
-            @RequestParam String end) {
-        return repository.findByCifKeyAndTransactionIdBetween(cifKey, start, end);
-    }
-
-    @GetMapping("/byCreditAccount")
-    public List<OrderEntity> getByCreditAccount(@RequestParam String hash, @RequestParam String number) {
-        return repository.findByCreditAccountNumberHashAndCreditAccountNumber(hash, number);
-    }
-
-    @GetMapping("/byDebitAccount")
-    public List<OrderEntity> getByDebitAccount(@RequestParam String hash, @RequestParam String number) {
-        return repository.findByDebitAccountNumberHashAndDebitAccountNumber(hash, number);
-    }
-
-    @GetMapping("/byTransaction")
-    public List<OrderEntity> getByTransaction(@RequestParam String hash, @RequestParam String txnId) {
-        return repository.findByTransactionIdHashAndTransactionId(hash, txnId);
-    }
-
-    @GetMapping("/byState")
-    public List<OrderEntity> getByState(@RequestParam String cifKey, @RequestParam String state) {
-        return repository.findByCifKeyAndState(cifKey, state);
-    }
-}
-=================================
-<dependencies>
-    <dependency>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
-    <dependency>
-        <groupId>com.github.derjust</groupId>
-        <artifactId>spring-data-dynamodb</artifactId>
-        <version>5.1.0</version>
-    </dependency>
-    <dependency>
-        <groupId>software.amazon.awssdk</groupId>
-        <artifactId>dynamodb</artifactId>
-        <version>2.25.21</version>
-    </dependency>
-</dependencies>
-
-
+alt Asynchronous Flow
+    IO -> Kafka: Publish Event (Async Payload)
+    Kafka -> CIF: Notify CIF System
+    Kafka -> Deposit: Notify Deposit System
+    Kafka -> IFMX: Notify Fraud System
+    Kafka -> Titan: Notify Alert System
+end
+@enduml
