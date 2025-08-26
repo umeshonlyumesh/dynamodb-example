@@ -1,66 +1,106 @@
-@startuml
-actor Client
-participant "Payment Engine" as PE
-participant "Integration Orchestration MS" as IO
-participant "Qualification Plugin" as Qual
-participant "Posting Plugin" as Post
-participant "Fraud Plugin" as Fraud
-participant "Alert Plugin" as Alert
-queue "Kafka Topic (PE->IO)" as KafkaIn
-queue "Kafka Topic (IO->PE)" as KafkaOut
-participant CIF
-participant Deposit
-participant IFMX
-participant Titan
+<dependencies>
+    <!-- Spring Boot -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter</artifactId>
+    </dependency>
 
-Client -> PE: Initiate Payment (Request)
-PE -> IO: Send Common Payload
+    <!-- Kafka -->
+    <dependency>
+        <groupId>org.springframework.kafka</groupId>
+        <artifactId>spring-kafka</artifactId>
+    </dependency>
 
-alt Synchronous Flow
-    IO -> Qual: Validate, Enrich, Balance Check
-    Qual -> CIF: Fetch CIF & Balance
-    CIF --> Qual: CIF Details
-    Qual --> IO: Enriched Payload
-    
-    IO -> Post: Deposit Posting
-    Post -> Deposit: Post Transaction
-    Deposit --> Post: Success/Failure
-    
-    IO -> Fraud: Fraud Check
-    Fraud -> IFMX: Fraud Validation
-    IFMX --> Fraud: Result
-    
-    IO -> Alert: Trigger Alert
-    Alert -> Titan: Send Notification
-    Titan --> Alert: Ack
-    
-    IO --> PE: Aggregated Response
-    PE --> Client: Payment Result
-end
+    <!-- JSON Serializer -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+    </dependency>
+</dependencies>
 
-alt Asynchronous Flow
-    PE -> KafkaIn: Publish Payment Payload
-    IO <- KafkaIn: Listener consumes Payload
-    
-    IO -> Qual: Validate, Enrich, Balance Check
-    Qual -> CIF: Fetch CIF & Balance
-    CIF --> Qual: CIF Details
-    Qual --> IO: Enriched Payload
-    
-    IO -> Post: Deposit Posting
-    Post -> Deposit: Post Transaction
-    Deposit --> Post: Success/Failure
-    
-    IO -> Fraud: Fraud Check
-    Fraud -> IFMX: Fraud Validation
-    IFMX --> Fraud: Result
-    
-    IO -> Alert: Trigger Alert
-    Alert -> Titan: Send Notification
-    Titan --> Alert: Ack
-    
-    IO -> KafkaOut: Publish Final Response
-    PE <- KafkaOut: Listener consumes Response
-    PE --> Client: Send Payment Result Ack
-end
-@enduml
+================================
+spring:
+  kafka:
+    bootstrap-servers: <your-cluster-bootstrap-server>:9092
+    properties:
+      security.protocol: SASL_SSL
+      sasl.mechanism: PLAIN
+      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required \
+        username='<API_KEY>' \
+        password='<API_SECRET>';
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+      group-id: my-consumer-group
+
+========================================
+package com.example.kafka.producer;
+
+import com.example.kafka.model.OrderEvent;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Service;
+
+@Service
+public class OrderProducer {
+
+    private final KafkaTemplate<String, OrderEvent> kafkaTemplate;
+    private static final String TOPIC = "orders";
+
+    public OrderProducer(KafkaTemplate<String, OrderEvent> kafkaTemplate) {
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    public void sendOrder(OrderEvent event) {
+        kafkaTemplate.send(TOPIC, event.getOrderId(), event);
+        System.out.println("Sent order event: " + event.getOrderId());
+    }
+}
+
+=========================================
+
+package com.example.kafka.consumer;
+
+import com.example.kafka.model.OrderEvent;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Service;
+
+@Service
+public class OrderConsumer {
+
+    @KafkaListener(topics = "orders", groupId = "my-consumer-group")
+    public void consume(OrderEvent event) {
+        System.out.println("Received order event: " + event.getOrderId() + " - " + event.getStatus());
+    }
+}
+
+================================
+
+package com.example.kafka.controller;
+
+import com.example.kafka.model.OrderEvent;
+import com.example.kafka.producer.OrderProducer;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/orders")
+public class OrderController {
+
+    private final OrderProducer orderProducer;
+
+    public OrderController(OrderProducer orderProducer) {
+        this.orderProducer = orderProducer;
+    }
+
+    @PostMapping("/publish")
+    public String publishOrder(@RequestBody OrderEvent event) {
+        orderProducer.sendOrder(event);
+        return "Order published: " + event.getOrderId();
+    }
+}
+
+
