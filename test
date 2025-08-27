@@ -1,10 +1,140 @@
-# Kafka SSL Configuration
-spring.kafka.security.protocol=SSL
-spring.kafka.ssl.key-store-type=PKCS12
-spring.kafka.ssl.key-store-location=file:/path/to/certificate.pfx
-spring.kafka.ssl.key-store-password=pfx-password
-spring.kafka.ssl.key-password=pfx-password
-spring.kafka.ssl.trust-store-type=PKCS12
-spring.kafka.ssl.trust-store-location=file:/path/to/certificate.pfx
-spring.kafka.ssl.trust-store-password=pfx-password
-spring.kafka.ssl.protocol=TLSv1.2
+package com.example.demo.config;
+
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.config.SslConfigs;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaAdmin;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.support.serializer.JsonSerializer;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Configuration class for Kafka with SSL security.
+ * This class sets up the Kafka producer with SSL security using .pfx certificate file.
+ */
+@Configuration
+public class KafkaConfig {
+
+    @Value("${spring.kafka.bootstrap-servers}")
+    private String bootstrapServers;
+
+    @Value("${spring.kafka.security.protocol}")
+    private String securityProtocol;
+
+    @Value("${spring.kafka.ssl.key-store-type}")
+    private String keyStoreType;
+
+    @Value("${spring.kafka.ssl.key-store-location}")
+    private String keyStoreLocation;
+
+    @Value("${spring.kafka.ssl.key-store-password}")
+    private String keyStorePassword;
+
+    @Value("${spring.kafka.ssl.key-password}")
+    private String keyPassword;
+
+    @Value("${spring.kafka.ssl.trust-store-type}")
+    private String trustStoreType;
+
+    @Value("${spring.kafka.ssl.trust-store-location}")
+    private String trustStoreLocation;
+
+    @Value("${spring.kafka.ssl.trust-store-password}")
+    private String trustStorePassword;
+
+    @Value("${spring.kafka.ssl.protocol}")
+    private String sslProtocol;
+
+    @Value("${kafka.topic.order-events}")
+    private String orderEventsTopic;
+
+    /**
+     * Configures the Kafka producer factory with SSL settings.
+     * 
+     * @return a producer factory configured with SSL
+     */
+    @Bean
+    public ProducerFactory<String, Object> producerFactory() {
+        Map<String, Object> configProps = new HashMap<>();
+
+        // Basic Kafka producer configuration
+        configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+
+        // SSL Configuration
+        configProps.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, securityProtocol);
+
+        // Keystore configuration
+        configProps.put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, keyStoreType);
+        configProps.put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, keyStoreLocation);
+        configProps.put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, keyStorePassword);
+        configProps.put(SslConfigs.SSL_KEY_PASSWORD_CONFIG, keyPassword);
+
+        // Truststore configuration
+        configProps.put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, trustStoreType);
+        configProps.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, trustStoreLocation);
+        configProps.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, trustStorePassword);
+
+        // SSL Protocol
+        configProps.put(SslConfigs.SSL_PROTOCOL_CONFIG, sslProtocol);
+
+        return new DefaultKafkaProducerFactory<>(configProps);
+    }
+
+    /**
+     * Creates a KafkaTemplate for sending messages.
+     * 
+     * @return a KafkaTemplate configured with the producer factory
+     */
+    @Bean
+    public KafkaTemplate<String, Object> kafkaTemplate() {
+        return new KafkaTemplate<>(producerFactory());
+    }
+
+    /**
+     * Configures Kafka admin client for topic management.
+     * 
+     * @return a KafkaAdmin configured with SSL
+     */
+    @Bean
+    public KafkaAdmin kafkaAdmin() {
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        configs.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, securityProtocol);
+
+        // Keystore configuration
+        configs.put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, keyStoreType);
+        configs.put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, keyStoreLocation);
+        configs.put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, keyStorePassword);
+        configs.put(SslConfigs.SSL_KEY_PASSWORD_CONFIG, keyPassword);
+
+        // Truststore configuration
+        configs.put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, trustStoreType);
+        configs.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, trustStoreLocation);
+        configs.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, trustStorePassword);
+
+        // SSL Protocol
+        configs.put(SslConfigs.SSL_PROTOCOL_CONFIG, sslProtocol);
+        return new KafkaAdmin(configs);
+    }
+
+    /**
+     * Creates the order events topic if it doesn't exist.
+     * 
+     * @return a NewTopic for order events
+     */
+    @Bean
+    public NewTopic orderEventsTopic() {
+        return new NewTopic(orderEventsTopic, 1, (short) 1);
+    }
+}
