@@ -1,140 +1,108 @@
-package com.example.demo.config;
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.config.SslConfigs;
-import org.apache.kafka.common.serialization.StringSerializer;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.core.DefaultKafkaProducerFactory;
-import org.springframework.kafka.core.KafkaAdmin;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.core.ProducerFactory;
-import org.springframework.kafka.support.serializer.JsonSerializer;
+  <groupId>com.example</groupId>
+  <artifactId>actimize-soap-client</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>actimize-soap-client</name>
+  <packaging>jar</packaging>
 
-import java.util.HashMap;
-import java.util.Map;
+  <properties>
+    <java.version>17</java.version>
+    <spring.boot.version>3.3.3</spring.boot.version>
+  </properties>
 
-/**
- * Configuration class for Kafka with SSL security.
- * This class sets up the Kafka producer with SSL security using .pfx certificate file.
- */
-@Configuration
-public class KafkaConfig {
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring.boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
-    @Value("${spring.kafka.bootstrap-servers}")
-    private String bootstrapServers;
+  <dependencies>
+    <!-- Spring Web + Spring-WS -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web-services</artifactId>
+    </dependency>
 
-    @Value("${spring.kafka.security.protocol}")
-    private String securityProtocol;
+    <!-- JAXB runtime for JDK 11+ -->
+    <dependency>
+      <groupId>org.glassfish.jaxb</groupId>
+      <artifactId>jaxb-runtime</artifactId>
+    </dependency>
 
-    @Value("${spring.kafka.ssl.key-store-type}")
-    private String keyStoreType;
+    <!-- SAAJ (SOAP message factory implementation) -->
+    <dependency>
+      <groupId>com.sun.xml.messaging.saaj</groupId>
+      <artifactId>saaj-impl</artifactId>
+    </dependency>
 
-    @Value("${spring.kafka.ssl.key-store-location}")
-    private String keyStoreLocation;
+    <!-- Optional: logging SOAP xml -->
+    <dependency>
+      <groupId>org.aspectj</groupId>
+      <artifactId>aspectjweaver</artifactId>
+    </dependency>
 
-    @Value("${spring.kafka.ssl.key-store-password}")
-    private String keyStorePassword;
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 
-    @Value("${spring.kafka.ssl.key-password}")
-    private String keyPassword;
+  <build>
+    <plugins>
+      <!-- Generate JAX-WS / JAXB classes from the WSDL -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>jaxws-maven-plugin</artifactId>
+        <version>2.6</version>
+        <executions>
+          <execution>
+            <id>wsimport-actimize</id>
+            <goals>
+              <goal>wsimport</goal>
+            </goals>
+            <configuration>
+              <!-- points to your file under resources -->
+              <wsdlFiles>
+                <wsdlFile>${project.basedir}/src/main/resources/wsdl/actimize.wsdl</wsdlFile>
+              </wsdlFiles>
+              <!-- where to generate sources -->
+              <packageName>com.example.actimize.ws</packageName>
+              <sourceDestDir>${project.build.directory}/generated-sources/wsimport</sourceDestDir>
 
-    @Value("${spring.kafka.ssl.trust-store-type}")
-    private String trustStoreType;
+              <!-- for rpc-literal WSDLs, keep method names stable -->
+              <xnocompile>true</xnocompile>
+              <vmArgs>
+                <vmArg>-Djavax.xml.accessExternalSchema=all</vmArg>
+              </vmArgs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
 
-    @Value("${spring.kafka.ssl.trust-store-location}")
-    private String trustStoreLocation;
-
-    @Value("${spring.kafka.ssl.trust-store-password}")
-    private String trustStorePassword;
-
-    @Value("${spring.kafka.ssl.protocol}")
-    private String sslProtocol;
-
-    @Value("${kafka.topic.order-events}")
-    private String orderEventsTopic;
-
-    /**
-     * Configures the Kafka producer factory with SSL settings.
-     * 
-     * @return a producer factory configured with SSL
-     */
-    @Bean
-    public ProducerFactory<String, Object> producerFactory() {
-        Map<String, Object> configProps = new HashMap<>();
-
-        // Basic Kafka producer configuration
-        configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
-
-        // SSL Configuration
-        configProps.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, securityProtocol);
-
-        // Keystore configuration
-        configProps.put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, keyStoreType);
-        configProps.put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, keyStoreLocation);
-        configProps.put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, keyStorePassword);
-        configProps.put(SslConfigs.SSL_KEY_PASSWORD_CONFIG, keyPassword);
-
-        // Truststore configuration
-        configProps.put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, trustStoreType);
-        configProps.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, trustStoreLocation);
-        configProps.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, trustStorePassword);
-
-        // SSL Protocol
-        configProps.put(SslConfigs.SSL_PROTOCOL_CONFIG, sslProtocol);
-
-        return new DefaultKafkaProducerFactory<>(configProps);
-    }
-
-    /**
-     * Creates a KafkaTemplate for sending messages.
-     * 
-     * @return a KafkaTemplate configured with the producer factory
-     */
-    @Bean
-    public KafkaTemplate<String, Object> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
-    }
-
-    /**
-     * Configures Kafka admin client for topic management.
-     * 
-     * @return a KafkaAdmin configured with SSL
-     */
-    @Bean
-    public KafkaAdmin kafkaAdmin() {
-        Map<String, Object> configs = new HashMap<>();
-        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        configs.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, securityProtocol);
-
-        // Keystore configuration
-        configs.put(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, keyStoreType);
-        configs.put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, keyStoreLocation);
-        configs.put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, keyStorePassword);
-        configs.put(SslConfigs.SSL_KEY_PASSWORD_CONFIG, keyPassword);
-
-        // Truststore configuration
-        configs.put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, trustStoreType);
-        configs.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, trustStoreLocation);
-        configs.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, trustStorePassword);
-
-        // SSL Protocol
-        configs.put(SslConfigs.SSL_PROTOCOL_CONFIG, sslProtocol);
-        return new KafkaAdmin(configs);
-    }
-
-    /**
-     * Creates the order events topic if it doesn't exist.
-     * 
-     * @return a NewTopic for order events
-     */
-    @Bean
-    public NewTopic orderEventsTopic() {
-        return new NewTopic(orderEventsTopic, 1, (short) 1);
-    }
-}
+      <!-- Include generated sources in compilation -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.11.0</version>
+        <configuration>
+          <source>${java.version}</source>
+          <target>${java.version}</target>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
