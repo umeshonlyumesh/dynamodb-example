@@ -1,4 +1,4 @@
-
+# Kafka Configuration
 spring.kafka.bootstrap-servers=localhost:9092
 spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
 spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
@@ -9,3 +9,6 @@ spring.kafka.ssl.key-store-type=PKCS12
 spring.kafka.ssl.key-store-location=file:/path/to/certificate.pfx
 spring.kafka.ssl.key-store-password=pfx-password
 spring.kafka.ssl.key-password=pfx-password
+
+# Kafka Topic Configuration
+kafka.topic.order-events=order-events
