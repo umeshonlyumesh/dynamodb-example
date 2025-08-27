@@ -1,21 +1,15 @@
-spring:
-  kafka:
-    bootstrap-servers: kafka.ecfk-001.mdw-lab.truist-dev.com:443
-    properties:
-      security.protocol: SSL
-      ssl.truststore.type: PKCS12
-      ssl.truststore.location: /etc/certs/kafka-client.p12
-      ssl.truststore.password: yourPasswordHere
-      ssl.keystore.type: PKCS12
-      ssl.keystore.location: /etc/certs/kafka-client.p12
-      ssl.keystore.password: yourPasswordHere
-      ssl.key.password: yourPasswordHere
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-    consumer:
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
-      group-id: my-consumer-group
+# Kafka Configuration
+spring.kafka.bootstrap-servers=localhost:9092
+spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
+
+# Kafka SSL Configuration
+spring.kafka.security.protocol=SSL
+spring.kafka.ssl.trust-store-location=file:/path/to/kafka.truststore.pie
+spring.kafka.ssl.trust-store-password=truststore-password
+spring.kafka.ssl.key-store-location=file:/path/to/kafka.keystore.pie
+spring.kafka.ssl.key-store-password=keystore-password
+spring.kafka.ssl.key-password=key-password
+
+# Kafka Topic Configuration
+kafka.topic.order-events=order-events
