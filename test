@@ -1,5 +1,7 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.example</groupId>
@@ -11,6 +13,9 @@
   <properties>
     <java.version>17</java.version>
     <spring.boot.version>3.3.3</spring.boot.version>
+    <jaxws.ri.version>3.0.2</jaxws.ri.version>
+    <jaxb.runtime.version>4.0.5</jaxb.runtime.version>
+    <saaj.version>3.0.3</saaj.version>
   </properties>
 
   <dependencyManagement>
@@ -26,7 +31,7 @@
   </dependencyManagement>
 
   <dependencies>
-    <!-- Spring Web + Spring-WS -->
+    <!-- REST + optional Spring-WS helpers -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
@@ -36,22 +41,28 @@
       <artifactId>spring-boot-starter-web-services</artifactId>
     </dependency>
 
-    <!-- JAXB runtime for JDK 11+ -->
+    <!-- JAX-WS RI (Jakarta) -->
+    <dependency>
+      <groupId>com.sun.xml.ws</groupId>
+      <artifactId>jaxws-rt</artifactId>
+      <version>${jaxws.ri.version}</version>
+    </dependency>
+
+    <!-- JAXB + SAAJ (Jakarta) -->
     <dependency>
       <groupId>org.glassfish.jaxb</groupId>
       <artifactId>jaxb-runtime</artifactId>
+      <version>${jaxb.runtime.version}</version>
     </dependency>
-
-    <!-- SAAJ (SOAP message factory implementation) -->
     <dependency>
       <groupId>com.sun.xml.messaging.saaj</groupId>
       <artifactId>saaj-impl</artifactId>
+      <version>${saaj.version}</version>
     </dependency>
-
-    <!-- Optional: logging SOAP xml -->
     <dependency>
-      <groupId>org.aspectj</groupId>
-      <artifactId>aspectjweaver</artifactId>
+      <groupId>com.sun.activation</groupId>
+      <artifactId>jakarta.activation</artifactId>
+      <version>2.0.1</version>
     </dependency>
 
     <dependency>
@@ -63,27 +74,23 @@
 
   <build>
     <plugins>
-      <!-- Generate JAX-WS / JAXB classes from the WSDL -->
+      <!-- Generate JAX-WS client from your WSDL -->
       <plugin>
-        <groupId>org.codehaus.mojo</groupId>
+        <groupId>com.sun.xml.ws</groupId>
         <artifactId>jaxws-maven-plugin</artifactId>
-        <version>2.6</version>
+        <version>${jaxws.ri.version}</version>
         <executions>
           <execution>
             <id>wsimport-actimize</id>
-            <goals>
-              <goal>wsimport</goal>
-            </goals>
+            <goals><goal>wsimport</goal></goals>
+            <phase>generate-sources</phase>
             <configuration>
-              <!-- points to your file under resources -->
               <wsdlFiles>
+                <!-- Put your WSDL here -->
                 <wsdlFile>${project.basedir}/src/main/resources/wsdl/actimize.wsdl</wsdlFile>
               </wsdlFiles>
-              <!-- where to generate sources -->
-              <packageName>com.example.actimize.ws</packageName>
               <sourceDestDir>${project.build.directory}/generated-sources/wsimport</sourceDestDir>
-
-              <!-- for rpc-literal WSDLs, keep method names stable -->
+              <packageName>com.example.actimize.ws</packageName>
               <xnocompile>true</xnocompile>
               <vmArgs>
                 <vmArg>-Djavax.xml.accessExternalSchema=all</vmArg>
@@ -93,7 +100,6 @@
         </executions>
       </plugin>
 
-      <!-- Include generated sources in compilation -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -102,6 +108,30 @@
           <source>${java.version}</source>
           <target>${java.version}</target>
         </configuration>
+      </plugin>
+
+      <!-- Make sure generated sources are compiled -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>add-wsimport-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/wsimport</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
     </plugins>
   </build>
