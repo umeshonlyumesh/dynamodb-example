@@ -1,322 +1,152 @@
-package com.example.eh.config;
-
-import com.example.eh.gen.EventHandlerService;
-import com.example.eh.gen.EHProxy;
-import jakarta.xml.ws.BindingProvider;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-import java.util.Map;
-
-@Configuration
-public class SoapClientConfig {
-
-  @Value("${eh.endpoint}")
-  private String endpoint;
-
-  @Value("${eh.connectTimeoutMs:10000}")
-  private int connectTimeoutMs;
-
-  @Value("${eh.readTimeoutMs:30000}")
-  private int readTimeoutMs;
-
-  @Bean
-  public EHProxy ehPort() {
-    EventHandlerService svc = new EventHandlerService();
-    EHProxy port = svc.getEventHandlerServiceHttpPort();
-
-    Map<String, Object> ctx = ((BindingProvider) port).getRequestContext();
-    ctx.put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, endpoint);
-
-    // JAX-WS standard & vendor timeouts
-    ctx.put("com.sun.xml.ws.connect.timeout", connectTimeoutMs);
-    ctx.put("com.sun.xml.ws.request.timeout", readTimeoutMs);
-    ctx.put("com.sun.xml.internal.ws.connect.timeout", connectTimeoutMs);
-    ctx.put("com.sun.xml.internal.ws.request.timeout", readTimeoutMs);
-
-    return port;
-  }
-}
-
-========================================================
-package com.example.eh.api;
-
-import jakarta.validation.constraints.NotBlank;
-import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-
-public record EvaluateIn(
-    @NotBlank String operationKey,
-    String transactionKey,
-    String transactionType,
-    OffsetDateTime transactionDateTime,
-    String accountName,
-    Boolean isEmployeeOwned,
-    BigDecimal amountOriginal,
-    String amountCurrency,
-    String partyName,
-    String taxId,
-    String ipAddress
-) {}
-
-=====================================
-
-package com.example.eh.api;
-
-import jakarta.validation.constraints.NotBlank;
-import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-
-public record EvaluateIn(
-    @NotBlank String operationKey,
-    String transactionKey,
-    String transactionType,
-    OffsetDateTime transactionDateTime,
-    String accountName,
-    Boolean isEmployeeOwned,
-    BigDecimal amountOriginal,
-    String amountCurrency,
-    String partyName,
-    String taxId,
-    String ipAddress
-) {}
-
-===========================
-package com.example.eh.api;
-
-public record EvaluateOut(
-    Integer returnCode,
-    String message,
-    String additionalData,
-    Boolean isAlertGenerated,
-    String modelScoreCd,
-    String transactionKey,
-    String operationKey,
-    String rawSoapBody // optional: for diagnostics; drop in prod if not needed
-) {}
-
-
-======================
-
-package com.example.eh.api;
-
-import com.example.eh.service.EvaluateService;
-import jakarta.validation.Valid;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/api/eh")
-public class EvaluateController {
-
-  private final EvaluateService service;
-
-  public EvaluateController(EvaluateService service) {
-    this.service = service;
-  }
-
-  @PostMapping("/evaluate")
-  public ResponseEntity<EvaluateOut> evaluate(@Valid @RequestBody EvaluateIn in) {
-    return ResponseEntity.ok(service.evaluate(in));
-  }
-}
-
-===========
-package com.example.eh.service;
-
-import com.example.eh.api.EvaluateIn;
-import com.example.eh.api.EvaluateOut;
-import com.example.eh.gen.EHResult;
-import com.example.eh.gen.EHProxy;
-import com.example.eh.gen.FFWSEvaluateGenericV22;
-import com.example.eh.gen.FFWSEvaluateGenericV22Response;
-import com.example.eh.gen.FFWSEvaluateGenericV22CustomOutTupleType;
-import jakarta.xml.bind.JAXBElement;
-import jakarta.xml.ws.soap.SOAPFaultException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
-@Service
-public class EvaluateService {
-  private static final Logger log = LoggerFactory.getLogger(EvaluateService.class);
-
-  private final EHProxy port;
-  private final EhRequestBuilder builder;
-  private final SoapResponseReader reader;
-
-  public EvaluateService(EHProxy port, EhRequestBuilder builder, SoapResponseReader reader) {
-    this.port = port;
-    this.builder = builder;
-    this.reader = reader;
-  }
-
-  public EvaluateOut evaluate(EvaluateIn in) {
-    try {
-      FFWSEvaluateGenericV22 req = new FFWSEvaluateGenericV22();
-      req.setGeneric(builder.buildGeneric(in));   // <- all JAXBElement prep hidden here
-
-      FFWSEvaluateGenericV22Response resp = port.ffWSEvaluateGenericV22(req);
-
-      // Map to DTO
-      EHResult r = resp.getFFWSEvaluateGenericV22Return();
-      FFWSEvaluateGenericV22CustomOutTupleType co = resp.getCustomOut();
-
-      Integer rc = r != null && r.getReturnCode()!=null ? r.getReturnCode().getValue() : null;
-      String msg = reader.get(r != null ? r.getMessage() : null);
-      String add = reader.get(r != null ? r.getAdditionalData() : null);
-
-      Boolean alert = reader.getBool(co != null ? co.getIsAlertGenerated() : null);
-      String model = reader.get(co != null ? co.getModelScoreCd() : null);
-      String txKey = reader.get(co != null ? co.getTransactionKey() : null);
-      String opKey = reader.get(co != null ? co.getOperationKey() : null);
-
-      String raw = reader.rawBodyIfAvailable(resp); // optional
-
-      return new EvaluateOut(rc, msg, add, alert, model, txKey, opKey, raw);
-
-    } catch (SOAPFaultException sfe) {
-      log.warn("SOAP Fault: {}", sfe.getFault().getFaultString(), sfe);
-      throw new SoapClientException("Upstream SOAP fault: " + sfe.getFault().getFaultString(), 502, sfe);
-    } catch (Exception e) {
-      log.error("SOAP call failed", e);
-      throw new SoapClientException("SOAP call failed", 502, e);
-    }
-  }
-}
-
-==============
-package com.example.eh.service;
-
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-
-public class SoapClientException extends ResponseStatusException {
-  public SoapClientException(String reason, int httpStatus, Throwable cause) {
-    super(HttpStatus.valueOf(httpStatus), reason, cause);
-  }
-}
-========================
-package com.example.eh.service;
-
-import com.example.eh.api.EvaluateIn;
-import com.example.eh.gen.*;
-import jakarta.xml.bind.JAXBElement;
-import org.springframework.stereotype.Component;
-
-import javax.xml.datatype.DatatypeFactory;
-import javax.xml.datatype.XMLGregorianCalendar;
-import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
-
-@Component
-public class EhRequestBuilder {
-
-  private final ObjectFactory of = new ObjectFactory();
-
-  public FFWSEvaluateGenericV22GenericTupleType buildGeneric(EvaluateIn in) throws Exception {
-    FFWSEvaluateGenericV22GenericTupleType g = new FFWSEvaluateGenericV22GenericTupleType();
-
-    // accountReference
-    if (notBlank(in.accountName()) || in.isEmployeeOwned()!=null) {
-      IFMAccountReferenceTypeV4 acct = new IFMAccountReferenceTypeV4();
-      set(acct::setAccountName, of.createIFMAccountReferenceTypeV4AccountName(in.accountName()));
-      set(acct::setIsEmployeeOwned, of.createIFMAccountReferenceTypeV4IsEmployeeOwned(in.isEmployeeOwned()));
-      g.setAccountReference(of.createTFWSEvaluateGenericV2GenericTypeAccountReference(acct));
-    }
-
-    // amount
-    if (in.amountCurrency()!=null || in.amountOriginal()!=null) {
-      IFMAmountTypeV3 amt = new IFMAmountTypeV3();
-      set(amt::setRFPAmountCurrencyCd, of.createIFMAmountTypeV3RFPAmountCurrencyCd(in.amountCurrency()));
-      set(amt::setOriginalAmount, in.amountOriginal()==null ? null : of.createIFMAmountTypeV3OriginalAmount(in.amountOriginal()));
-      g.setAmount(of.createTFWSEvaluateGenericV2GenericTypeAmount(amt));
-    }
-
-    // baseTransaction
-    if (notBlank(in.transactionKey()) || notBlank(in.transactionType()) || in.transactionDateTime()!=null) {
-      IFMBaseTransactionTypeV3 base = new IFMBaseTransactionTypeV3();
-      set(base::setTransactionKey, of.createIFMBaseTransactionTypeV3TransactionKey(in.transactionKey()));
-      set(base::setTransactionType, of.createIFMBaseTransactionTypeV3TransactionType(in.transactionType()));
-      // Example of a date field we can populate if you want to keep a timestamp:
-      if (in.transactionDateTime()!=null) {
-        set(base::setInterbankSettlementDate, of.createIFMBaseTransactionTypeV3InterbankSettlementDate(xgc(in.transactionDateTime())));
-      }
-      g.setBaseTransaction(of.createTFWSEvaluateGenericV2GenericTypeBaseTransaction(base));
-    }
-
-    // partyReference
-    if (notBlank(in.partyName()) || notBlank(in.taxId())) {
-      IFMPartyReferenceTypeV4 p = new IFMPartyReferenceTypeV4();
-      set(p::setName, of.createIFMPartyReferenceTypeV4Name(in.partyName()));
-      set(p::setTaxId, of.createIFMPartyReferenceTypeV4TaxId(in.taxId()));
-      g.setPartyReference(of.createTFWSEvaluateGenericV2GenericTypePartyReference(p));
-    }
-
-    // onlineSession
-    if (notBlank(in.ipAddress())) {
-      IFMOnlineSessionTypeV4 s = new IFMOnlineSessionTypeV4();
-      set(s::setIpAddress, of.createIFMOnlineSessionTypeV4IpAddress(in.ipAddress()));
-      g.setOnlineSession(of.createTFWSEvaluateGenericV2GenericTypeOnlineSession(s));
-    }
-
-    // userDefined (stash operationKey as JSON)
-    IFMUserDefinedComplexTypesV1 ud = new IFMUserDefinedComplexTypesV1();
-    set(ud::setDataOfUserDefinedType, of.createIFMUserDefinedComplexTypesV1DataOfUserDefinedType(
-        "{\"operationKey\":\"" + in.operationKey() + "\"}"));
-    g.setUserDefined(of.createTFWSEvaluateGenericV2GenericTypeUserDefined(ud));
-
-    return g;
-  }
-
-  // --------- small helpers to keep code tidy ----------
-
-  @FunctionalInterface
-  private interface Setter<T> { void set(T v); }
-
-  private <T> void set(Setter<JAXBElement<T>> setter, JAXBElement<T> value) {
-    if (value != null && value.getValue() != null) setter.set(value);
-  }
-
-  private boolean notBlank(String s) { return s != null && !s.isBlank(); }
-
-  private XMLGregorianCalendar xgc(OffsetDateTime odt) throws Exception {
-    return DatatypeFactory.newInstance()
-        .newXMLGregorianCalendar(odt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-  }
-}
-
-==================
-package com.example.eh.service;
-
-import com.example.eh.gen.FFWSEvaluateGenericV22Response;
-import jakarta.xml.bind.JAXBElement;
-import org.springframework.stereotype.Component;
-
-import javax.xml.transform.Source;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.stream.StreamResult;
-import java.io.ByteArrayOutputStream;
+import javax.crypto.*;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import java.io.Console;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
+import java.security.spec.KeySpec;
+import java.util.Base64;
 
-@Component
-public class SoapResponseReader {
-  public String get(JAXBElement<String> el) { return el==null ? null : el.getValue(); }
-  public Integer get(JAXBElement<Integer> el) { return el==null ? null : el.getValue(); }
-  public Boolean getBool(JAXBElement<Boolean> el) { return el==null ? null : el.getValue(); }
+public class EncryptXml {
 
-  // If you want to return the raw SOAP body for troubleshooting:
-  public String rawBodyIfAvailable(FFWSEvaluateGenericV22Response resp) {
-    try {
-      // In wsimport flow we don't directly have the SOAPMessage; this is only illustrative.
-      // In most cases, you won't need this. Keep null to avoid confusion.
-      return null;
-    } catch (Exception e) {
-      return null;
+    private static final byte[] MAGIC = "XMLENC".getBytes(StandardCharsets.US_ASCII); // 6 bytes
+    private static final byte VERSION = 1;
+    private static final int SALT_LEN = 16;
+    private static final int IV_LEN = 12;   // GCM recommended 12 bytes
+    private static final int KEY_LEN = 32;  // 256-bit
+    private static final int GCM_TAG_BITS = 128;
+    private static final int PBKDF2_ITERS = 200_000;
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 3) {
+            System.err.println("""
+                Usage:
+                  Encrypt: java EncryptXml enc <input.xml> <output.enc>
+                  Decrypt: java EncryptXml dec <input.enc> <output.xml>
+                """);
+            System.exit(2);
+        }
+
+        String mode = args[0];
+        Path in = Path.of(args[1]);
+        Path out = Path.of(args[2]);
+
+        char[] password = readPassword("Enter password: ");
+        try {
+            if ("enc".equalsIgnoreCase(mode)) {
+                encryptFile(in, out, password);
+                System.out.println("Encrypted -> " + out.toAbsolutePath());
+            } else if ("dec".equalsIgnoreCase(mode)) {
+                decryptFile(in, out, password);
+                System.out.println("Decrypted -> " + out.toAbsolutePath());
+            } else {
+                System.err.println("Unknown mode: " + mode);
+                System.exit(2);
+            }
+        } finally {
+            zero(password);
+        }
     }
-  }
+
+    private static void encryptFile(Path inputXml, Path outputEnc, char[] password)
+            throws IOException, GeneralSecurityException {
+
+        byte[] plain = Files.readAllBytes(inputXml);
+
+        SecureRandom rnd = SecureRandom.getInstanceStrong();
+        byte[] salt = new byte[SALT_LEN];
+        rnd.nextBytes(salt);
+        byte[] iv = new byte[IV_LEN];
+        rnd.nextBytes(iv);
+
+        SecretKey key = deriveKey(password, salt, PBKDF2_ITERS, KEY_LEN);
+
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+        byte[] ct = cipher.doFinal(plain);
+
+        // Build binary payload
+        ByteBuffer buf = ByteBuffer.allocate(
+                MAGIC.length + 1 + SALT_LEN + Integer.BYTES + IV_LEN + ct.length);
+        buf.put(MAGIC);
+        buf.put(VERSION);
+        buf.put(salt);
+        buf.putInt(PBKDF2_ITERS);
+        buf.put(iv);
+        buf.put(ct);
+
+        // Write Base64 for portability
+        String b64 = Base64.getEncoder().encodeToString(buf.array());
+        Files.writeString(outputEnc, b64, StandardCharsets.US_ASCII);
+    }
+
+    private static void decryptFile(Path inputEnc, Path outputXml, char[] password)
+            throws IOException, GeneralSecurityException {
+
+        String b64 = Files.readString(inputEnc, StandardCharsets.US_ASCII).trim();
+        byte[] blob = Base64.getDecoder().decode(b64);
+        ByteBuffer buf = ByteBuffer.wrap(blob);
+
+        byte[] magic = new byte[MAGIC.length];
+        buf.get(magic);
+        if (!java.util.Arrays.equals(magic, MAGIC)) {
+            throw new GeneralSecurityException("Invalid file header (magic).");
+        }
+
+        byte ver = buf.get();
+        if (ver != VERSION) {
+            throw new GeneralSecurityException("Unsupported version: " + ver);
+        }
+
+        byte[] salt = new byte[SALT_LEN];
+        buf.get(salt);
+        int iters = buf.getInt();
+        if (iters < 50_000) { // sanity check
+            throw new GeneralSecurityException("Iteration count too low: " + iters);
+        }
+
+        byte[] iv = new byte[IV_LEN];
+        buf.get(iv);
+
+        byte[] ct = new byte[buf.remaining()];
+        buf.get(ct);
+
+        SecretKey key = deriveKey(password, salt, iters, KEY_LEN);
+
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+        byte[] plain = cipher.doFinal(ct); // verifies tag
+
+        Files.write(outputXml, plain);
+    }
+
+    private static SecretKey deriveKey(char[] password, byte[] salt, int iters, int keyLenBytes)
+            throws GeneralSecurityException {
+        SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        KeySpec spec = new PBEKeySpec(password, salt, iters, keyLenBytes * 8);
+        byte[] keyBytes = skf.generateSecret(spec).getEncoded();
+        return new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+    }
+
+    private static char[] readPassword(String prompt) throws IOException {
+        Console console = System.console();
+        if (console != null) {
+            char[] pw = console.readPassword(prompt);
+            if (pw != null && pw.length > 0) return pw;
+        }
+        // Fallback (IDE): read from stdin (not hidden)
+        System.out.print(prompt);
+        byte[] in = System.in.readAllBytes();
+        String s = new String(in, StandardCharsets.UTF_8).trim();
+        return s.toCharArray();
+    }
+
+    private static void zero(char[] arr) {
+        if (arr != null) java.util.Arrays.fill(arr, '\0');
+    }
 }
-
-
