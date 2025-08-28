@@ -1,82 +1,123 @@
 package com.example.demo.util;
 
-import javax.crypto.*;
+import javax.crypto.Cipher;
+import javax.crypto.CipherInputStream;
+import javax.crypto.CipherOutputStream;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.security.spec.KeySpec;
-import java.util.Base64;
+import java.util.Arrays;
 
-public class XmlCryptoUtil {
+public final class XmlCryptoStreams {
 
-    private static final byte[] MAGIC = "XMLENC".getBytes(StandardCharsets.US_ASCII);
+    private XmlCryptoStreams() {}
+
+    // ---- Format constants (binary) ----
+    private static final byte[] MAGIC = "XMLENC".getBytes(StandardCharsets.US_ASCII); // 6
     private static final byte VERSION = 1;
     private static final int SALT_LEN = 16;
     private static final int IV_LEN = 12;
-    private static final int KEY_LEN = 32;  // 256-bit
+    private static final int KEY_LEN_BYTES = 32; // 256-bit
     private static final int GCM_TAG_BITS = 128;
     private static final int PBKDF2_ITERS = 200_000;
 
-    // Encrypts resource file and saves encrypted file under target/
-    public static void encryptFile(String resourceName, String outFile, char[] password) throws Exception {
-        byte[] plain = readResource(resourceName);
+    // ========= PUBLIC API (STREAMING) =========
 
-        SecureRandom rnd = SecureRandom.getInstanceStrong();
-        byte[] salt = new byte[SALT_LEN]; rnd.nextBytes(salt);
-        byte[] iv = new byte[IV_LEN];     rnd.nextBytes(iv);
-
-        SecretKey key = deriveKey(password, salt, PBKDF2_ITERS, KEY_LEN);
-
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
-        byte[] ct = cipher.doFinal(plain);
-
-        ByteBuffer buf = ByteBuffer.allocate(MAGIC.length + 1 + SALT_LEN + Integer.BYTES + IV_LEN + ct.length);
-        buf.put(MAGIC).put(VERSION).put(salt).putInt(PBKDF2_ITERS).put(iv).put(ct);
-
-        // Write base64 text for portability
-        String b64 = Base64.getEncoder().encodeToString(buf.array());
-        Files.createDirectories(Path.of("target"));
-        Files.writeString(Path.of("target", outFile), b64, StandardCharsets.US_ASCII);
-    }
-
-    // Decrypts resource file (Base64 text) and saves plain XML under target/
-    public static void decryptFile(String resourceName, String outFile, char[] password) throws Exception {
-        byte[] blobB64 = readResource(resourceName);
-        byte[] blob = Base64.getDecoder().decode(new String(blobB64, StandardCharsets.US_ASCII).trim());
-
-        ByteBuffer buf = ByteBuffer.wrap(blob);
-        byte[] magic = new byte[MAGIC.length]; buf.get(magic);
-        if (!java.util.Arrays.equals(magic, MAGIC)) throw new GeneralSecurityException("Bad header");
-
-        byte ver = buf.get();
-        if (ver != VERSION) throw new GeneralSecurityException("Unsupported version");
-
-        byte[] salt = new byte[SALT_LEN]; buf.get(salt);
-        int iters = buf.getInt();
-        byte[] iv = new byte[IV_LEN]; buf.get(iv);
-        byte[] ct = new byte[buf.remaining()]; buf.get(ct);
-
-        SecretKey key = deriveKey(password, salt, iters, KEY_LEN);
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
-        byte[] plain = cipher.doFinal(ct);
-
-        Files.createDirectories(Path.of("target"));
-        Files.write(Path.of("target", outFile), plain);
-    }
-
-    // --- Helpers ---
-    private static byte[] readResource(String name) throws Exception {
-        try (InputStream in = XmlCryptoUtil.class.getClassLoader().getResourceAsStream(name)) {
-            if (in == null) throw new IllegalArgumentException("Resource not found: " + name);
-            return in.readAllBytes();
+    /** Encrypts a classpath resource and writes binary .enc file to outPath (streaming, O(1) memory). */
+    public static void encryptResourceToFile(String resourceName, Path outPath, char[] password)
+            throws Exception {
+        try (InputStream in = openResource(resourceName)) {
+            encryptStreamToFile(in, outPath, password);
         }
+    }
+
+    /** Decrypts a classpath resource (.enc) and writes plaintext to outPath (streaming, O(1) memory). */
+    public static void decryptResourceToFile(String resourceName, Path outPath, char[] password)
+            throws Exception {
+        try (InputStream in = openResource(resourceName)) {
+            decryptStreamToFile(in, outPath, password);
+        }
+    }
+
+    /** Encrypts an arbitrary input stream to a file (no Base64; best for big files). */
+    public static void encryptStreamToFile(InputStream plaintext, Path outPath, char[] password)
+            throws IOException, GeneralSecurityException {
+        Files.createDirectories(outPath.getParent() == null ? Path.of(".") : outPath.getParent());
+
+        byte[] salt = new byte[SALT_LEN];
+        byte[] iv   = new byte[IV_LEN];
+        SecureRandom rnd = new SecureRandom();
+        rnd.nextBytes(salt);
+        rnd.nextBytes(iv);
+
+        SecretKey key = deriveKey(password, salt, PBKDF2_ITERS, KEY_LEN_BYTES);
+        Cipher enc = Cipher.getInstance("AES/GCM/NoPadding");
+        enc.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+
+        try (OutputStream fileOut = Files.newOutputStream(outPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+             DataOutputStream headerOut = new DataOutputStream(new BufferedOutputStream(fileOut))) {
+
+            // Write header
+            headerOut.write(MAGIC);
+            headerOut.writeByte(VERSION);
+            headerOut.write(salt);
+            headerOut.writeInt(PBKDF2_ITERS);
+            headerOut.write(iv);
+            headerOut.flush();
+
+            // Stream ciphertext + tag
+            try (CipherOutputStream cos = new CipherOutputStream(headerOut, enc)) {
+                pipe(plaintext, cos);
+            }
+        }
+    }
+
+    /** Decrypts from an input stream that starts with our header, writes plaintext to outPath. */
+    public static void decryptStreamToFile(InputStream encStream, Path outPath, char[] password)
+            throws IOException, GeneralSecurityException {
+        Files.createDirectories(outPath.getParent() == null ? Path.of(".") : outPath.getParent());
+
+        try (DataInputStream din = new DataInputStream(new BufferedInputStream(encStream));
+             OutputStream fileOut = Files.newOutputStream(outPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+
+            // Read/validate header (fixed-size reads, no ByteBuffer)
+            byte[] magic = din.readNBytes(MAGIC.length);
+            if (!Arrays.equals(magic, MAGIC)) throw new GeneralSecurityException("Bad header (magic)");
+            byte ver = din.readByte();
+            if (ver != VERSION) throw new GeneralSecurityException("Unsupported version: " + ver);
+            byte[] salt = din.readNBytes(SALT_LEN);
+            int iters = din.readInt();
+            if (iters < 50_000) throw new GeneralSecurityException("PBKDF2 iteration count too low");
+            byte[] iv = din.readNBytes(IV_LEN);
+
+            SecretKey key = deriveKey(password, salt, iters, KEY_LEN_BYTES);
+            Cipher dec = Cipher.getInstance("AES/GCM/NoPadding");
+            dec.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+
+            // Stream plaintext out; GCM tag verified at close()
+            try (CipherInputStream cis = new CipherInputStream(din, dec)) {
+                pipe(cis, fileOut);
+            } // AEADBadTagException thrown here if password/wire wrong
+        }
+    }
+
+    // ========= HELPERS =========
+
+    private static InputStream openResource(String resourceName) {
+        InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourceName);
+        if (in == null) {
+            // also try with leading slash
+            in = XmlCryptoStreams.class.getResourceAsStream("/" + resourceName);
+        }
+        if (in == null) throw new IllegalArgumentException("Resource not found: " + resourceName);
+        return in;
     }
 
     private static SecretKey deriveKey(char[] pw, byte[] salt, int iters, int keyLenBytes) throws GeneralSecurityException {
@@ -85,32 +126,13 @@ public class XmlCryptoUtil {
         byte[] k = f.generateSecret(spec).getEncoded();
         return new javax.crypto.spec.SecretKeySpec(k, "AES");
     }
-}
 
-
-
-=================================
-import jakarta.annotation.PostConstruct;
-import org.springframework.stereotype.Service;
-
-@Service
-public class StartupCryptoService {
-
-    @PostConstruct
-    public void init() {
-        try {
-            char[] password = "StrongPass123!".toCharArray();
-
-            // Encrypt src/main/resources/input.xml → target/input.xml.enc
-            XmlCryptoUtil.encryptFile("input.xml", "input.xml.enc", password);
-
-            // Decrypt src/main/resources/input.xml.enc → target/roundtrip.xml
-            XmlCryptoUtil.decryptFile("input.xml.enc", "roundtrip.xml", password);
-
-            System.out.println("Encryption + Decryption done. See target/ folder.");
-        } catch (Exception e) {
-            e.printStackTrace();
+    private static void pipe(InputStream in, OutputStream out) throws IOException {
+        byte[] buf = new byte[1024 * 1024]; // 1 MB buffer; tune as needed
+        int n;
+        while ((n = in.read(buf)) >= 0) {
+            out.write(buf, 0, n);
         }
+        out.flush();
     }
 }
-
