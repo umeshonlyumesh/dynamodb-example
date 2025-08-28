@@ -1,96 +1,284 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" 
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
-                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
+server:
+  port: 8080
 
-  <groupId>com.example</groupId>
-  <artifactId>actimize-client</artifactId>
-  <version>1.0.0</version>
-  <name>actimize-client</name>
+eh:
+  endpoint: "http://dev-ifmapop01:2347/eh/service/EventHandlerService"
+  connectTimeoutMs: 10000
+  readTimeoutMs: 30000
+================
+package com.example.eh.config;
 
-  <properties>
-    <java.version>17</java.version>
-    <spring.boot.version>3.3.3</spring.boot.version>
-    <jaxws.rt.version>4.0.2</jaxws.rt.version> <!-- Jakarta/JAX-WS RI -->
-  </properties>
+import com.example.eh.gen.EventHandlerService;
+import com.example.eh.gen.EHProxy;
+import jakarta.xml.ws.BindingProvider;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-dependencies</artifactId>
-        <version>${spring.boot.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
+import java.util.Map;
 
-  <dependencies>
-    <!-- Spring Web (for REST controller) -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
+@Configuration
+public class SoapClientConfig {
 
-    <!-- JAX-WS runtime (Jakarta) -->
-    <dependency>
-      <groupId>com.sun.xml.ws</groupId>
-      <artifactId>jaxws-rt</artifactId>
-      <version>${jaxws.rt.version}</version>
-    </dependency>
+  @Value("${eh.endpoint}")
+  private String endpoint;
 
-    <!-- JAXB API/Runtime (Jakarta) -->
-    <dependency>
-      <groupId>org.glassfish.jaxb</groupId>
-      <artifactId>jaxb-runtime</artifactId>
-      <version>4.0.5</version>
-    </dependency>
-  </dependencies>
+  @Value("${eh.connectTimeoutMs:10000}")
+  private int connectTimeoutMs;
 
-  <build>
-    <plugins>
-      <!-- Generate JAX-WS client from your WSDL -->
-      <plugin>
-        <groupId>com.sun.xml.ws</groupId>
-        <artifactId>jaxws-maven-plugin</artifactId>
-        <version>3.0.2</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>wsimport</goal>
-            </goals>
-            <configuration>
-              <!-- Where your WSDL is placed in the project -->
-              <wsdlFiles>
-                <wsdlFile>${project.basedir}/src/main/resources/wsdl/EventHandlerService.wsdl</wsdlFile>
-              </wsdlFiles>
+  @Value("${eh.readTimeoutMs:30000}")
+  private int readTimeoutMs;
 
-              <!-- Package for generated classes -->
-              <packageName>com.actimize.eh.ws</packageName>
+  @Bean
+  public EHProxy ehPort() {
+    EventHandlerService svc = new EventHandlerService();
+    EHProxy port = svc.getEventHandlerServiceHttpPort();
 
-              <!-- Keep RPC-literal compatible, no wrapper classes -->
-              <xnocompile>true</xnocompile>
-              <extension>true</extension>
-              <verbose>true</verbose>
+    Map<String, Object> ctx = ((BindingProvider) port).getRequestContext();
+    ctx.put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, endpoint);
 
-              <!-- If you want to inspect generated sources -->
-              <sourceDestDir>${project.build.directory}/generated-sources/wsimport</sourceDestDir>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
+    // JAX-WS standard & vendor timeouts
+    ctx.put("com.sun.xml.ws.connect.timeout", connectTimeoutMs);
+    ctx.put("com.sun.xml.ws.request.timeout", readTimeoutMs);
+    ctx.put("com.sun.xml.internal.ws.connect.timeout", connectTimeoutMs);
+    ctx.put("com.sun.xml.internal.ws.request.timeout", readTimeoutMs);
 
-      <plugin>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.11.0</version>
-        <configuration>
-          <source>${java.version}</source>
-          <target>${java.version}</target>
-          <annotationProcessorPaths/>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
-</project>
+    return port;
+  }
+}
+============================================
+
+package com.example.eh.api;
+
+public record EvaluateOut(
+    Integer returnCode,
+    String message,
+    String additionalData,
+    Boolean isAlertGenerated,
+    String modelScoreCd,
+    String transactionKey,
+    String operationKey,
+    String rawSoapBody // optional: for diagnostics; drop in prod if not needed
+) {}
+=====================
+package com.example.eh.api;
+
+import com.example.eh.service.EvaluateService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/eh")
+public class EvaluateController {
+
+  private final EvaluateService service;
+
+  public EvaluateController(EvaluateService service) {
+    this.service = service;
+  }
+
+  @PostMapping("/evaluate")
+  public ResponseEntity<EvaluateOut> evaluate(@Valid @RequestBody EvaluateIn in) {
+    return ResponseEntity.ok(service.evaluate(in));
+  }
+}
+=====================================
+package com.example.eh.service;
+
+import com.example.eh.api.EvaluateIn;
+import com.example.eh.api.EvaluateOut;
+import com.example.eh.gen.EHResult;
+import com.example.eh.gen.EHProxy;
+import com.example.eh.gen.FFWSEvaluateGenericV22;
+import com.example.eh.gen.FFWSEvaluateGenericV22Response;
+import com.example.eh.gen.FFWSEvaluateGenericV22CustomOutTupleType;
+import jakarta.xml.bind.JAXBElement;
+import jakarta.xml.ws.soap.SOAPFaultException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+@Service
+public class EvaluateService {
+  private static final Logger log = LoggerFactory.getLogger(EvaluateService.class);
+
+  private final EHProxy port;
+  private final EhRequestBuilder builder;
+  private final SoapResponseReader reader;
+
+  public EvaluateService(EHProxy port, EhRequestBuilder builder, SoapResponseReader reader) {
+    this.port = port;
+    this.builder = builder;
+    this.reader = reader;
+  }
+
+  public EvaluateOut evaluate(EvaluateIn in) {
+    try {
+      FFWSEvaluateGenericV22 req = new FFWSEvaluateGenericV22();
+      req.setGeneric(builder.buildGeneric(in));   // <- all JAXBElement prep hidden here
+
+      FFWSEvaluateGenericV22Response resp = port.ffWSEvaluateGenericV22(req);
+
+      // Map to DTO
+      EHResult r = resp.getFFWSEvaluateGenericV22Return();
+      FFWSEvaluateGenericV22CustomOutTupleType co = resp.getCustomOut();
+
+      Integer rc = r != null && r.getReturnCode()!=null ? r.getReturnCode().getValue() : null;
+      String msg = reader.get(r != null ? r.getMessage() : null);
+      String add = reader.get(r != null ? r.getAdditionalData() : null);
+
+      Boolean alert = reader.getBool(co != null ? co.getIsAlertGenerated() : null);
+      String model = reader.get(co != null ? co.getModelScoreCd() : null);
+      String txKey = reader.get(co != null ? co.getTransactionKey() : null);
+      String opKey = reader.get(co != null ? co.getOperationKey() : null);
+
+      String raw = reader.rawBodyIfAvailable(resp); // optional
+
+      return new EvaluateOut(rc, msg, add, alert, model, txKey, opKey, raw);
+
+    } catch (SOAPFaultException sfe) {
+      log.warn("SOAP Fault: {}", sfe.getFault().getFaultString(), sfe);
+      throw new SoapClientException("Upstream SOAP fault: " + sfe.getFault().getFaultString(), 502, sfe);
+    } catch (Exception e) {
+      log.error("SOAP call failed", e);
+      throw new SoapClientException("SOAP call failed", 502, e);
+    }
+  }
+}
+
+=======================================================
+package com.example.eh.service;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+public class SoapClientException extends ResponseStatusException {
+  public SoapClientException(String reason, int httpStatus, Throwable cause) {
+    super(HttpStatus.valueOf(httpStatus), reason, cause);
+  }
+}
+
+===============================================
+package com.example.eh.service;
+
+import com.example.eh.api.EvaluateIn;
+import com.example.eh.gen.*;
+import jakarta.xml.bind.JAXBElement;
+import org.springframework.stereotype.Component;
+
+import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.XMLGregorianCalendar;
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+
+@Component
+public class EhRequestBuilder {
+
+  private final ObjectFactory of = new ObjectFactory();
+
+  public FFWSEvaluateGenericV22GenericTupleType buildGeneric(EvaluateIn in) throws Exception {
+    FFWSEvaluateGenericV22GenericTupleType g = new FFWSEvaluateGenericV22GenericTupleType();
+
+    // accountReference
+    if (notBlank(in.accountName()) || in.isEmployeeOwned()!=null) {
+      IFMAccountReferenceTypeV4 acct = new IFMAccountReferenceTypeV4();
+      set(acct::setAccountName, of.createIFMAccountReferenceTypeV4AccountName(in.accountName()));
+      set(acct::setIsEmployeeOwned, of.createIFMAccountReferenceTypeV4IsEmployeeOwned(in.isEmployeeOwned()));
+      g.setAccountReference(of.createTFWSEvaluateGenericV2GenericTypeAccountReference(acct));
+    }
+
+    // amount
+    if (in.amountCurrency()!=null || in.amountOriginal()!=null) {
+      IFMAmountTypeV3 amt = new IFMAmountTypeV3();
+      set(amt::setRFPAmountCurrencyCd, of.createIFMAmountTypeV3RFPAmountCurrencyCd(in.amountCurrency()));
+      set(amt::setOriginalAmount, in.amountOriginal()==null ? null : of.createIFMAmountTypeV3OriginalAmount(in.amountOriginal()));
+      g.setAmount(of.createTFWSEvaluateGenericV2GenericTypeAmount(amt));
+    }
+
+    // baseTransaction
+    if (notBlank(in.transactionKey()) || notBlank(in.transactionType()) || in.transactionDateTime()!=null) {
+      IFMBaseTransactionTypeV3 base = new IFMBaseTransactionTypeV3();
+      set(base::setTransactionKey, of.createIFMBaseTransactionTypeV3TransactionKey(in.transactionKey()));
+      set(base::setTransactionType, of.createIFMBaseTransactionTypeV3TransactionType(in.transactionType()));
+      // Example of a date field we can populate if you want to keep a timestamp:
+      if (in.transactionDateTime()!=null) {
+        set(base::setInterbankSettlementDate, of.createIFMBaseTransactionTypeV3InterbankSettlementDate(xgc(in.transactionDateTime())));
+      }
+      g.setBaseTransaction(of.createTFWSEvaluateGenericV2GenericTypeBaseTransaction(base));
+    }
+
+    // partyReference
+    if (notBlank(in.partyName()) || notBlank(in.taxId())) {
+      IFMPartyReferenceTypeV4 p = new IFMPartyReferenceTypeV4();
+      set(p::setName, of.createIFMPartyReferenceTypeV4Name(in.partyName()));
+      set(p::setTaxId, of.createIFMPartyReferenceTypeV4TaxId(in.taxId()));
+      g.setPartyReference(of.createTFWSEvaluateGenericV2GenericTypePartyReference(p));
+    }
+
+    // onlineSession
+    if (notBlank(in.ipAddress())) {
+      IFMOnlineSessionTypeV4 s = new IFMOnlineSessionTypeV4();
+      set(s::setIpAddress, of.createIFMOnlineSessionTypeV4IpAddress(in.ipAddress()));
+      g.setOnlineSession(of.createTFWSEvaluateGenericV2GenericTypeOnlineSession(s));
+    }
+
+    // userDefined (stash operationKey as JSON)
+    IFMUserDefinedComplexTypesV1 ud = new IFMUserDefinedComplexTypesV1();
+    set(ud::setDataOfUserDefinedType, of.createIFMUserDefinedComplexTypesV1DataOfUserDefinedType(
+        "{\"operationKey\":\"" + in.operationKey() + "\"}"));
+    g.setUserDefined(of.createTFWSEvaluateGenericV2GenericTypeUserDefined(ud));
+
+    return g;
+  }
+
+  // --------- small helpers to keep code tidy ----------
+
+  @FunctionalInterface
+  private interface Setter<T> { void set(T v); }
+
+  private <T> void set(Setter<JAXBElement<T>> setter, JAXBElement<T> value) {
+    if (value != null && value.getValue() != null) setter.set(value);
+  }
+
+  private boolean notBlank(String s) { return s != null && !s.isBlank(); }
+
+  private XMLGregorianCalendar xgc(OffsetDateTime odt) throws Exception {
+    return DatatypeFactory.newInstance()
+        .newXMLGregorianCalendar(odt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+  }
+}
+
+============================================================================
+package com.example.eh.service;
+
+import com.example.eh.gen.FFWSEvaluateGenericV22Response;
+import jakarta.xml.bind.JAXBElement;
+import org.springframework.stereotype.Component;
+
+import javax.xml.transform.Source;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+
+@Component
+public class SoapResponseReader {
+  public String get(JAXBElement<String> el) { return el==null ? null : el.getValue(); }
+  public Integer get(JAXBElement<Integer> el) { return el==null ? null : el.getValue(); }
+  public Boolean getBool(JAXBElement<Boolean> el) { return el==null ? null : el.getValue(); }
+
+  // If you want to return the raw SOAP body for troubleshooting:
+  public String rawBodyIfAvailable(FFWSEvaluateGenericV22Response resp) {
+    try {
+      // In wsimport flow we don't directly have the SOAPMessage; this is only illustrative.
+      // In most cases, you won't need this. Keep null to avoid confusion.
+      return null;
+    } catch (Exception e) {
+      return null;
+    }
+  }
+}
+
+========================================================
