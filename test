@@ -1,126 +1,82 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.5</version>
-        <relativePath/> <!-- lookup parent from repository -->
-    </parent>
-    <groupId>com.dynamodb.mcp</groupId>
-    <artifactId>fraud</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>fraud</name>
-    <description>fraud</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
-    <properties>
-        <java.version>21</java.version>
-    </properties>
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web-services</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
+package com.fraud.service;
 
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.projectreactor</groupId>
-            <artifactId>reactor-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.xml.ws</groupId>
-            <artifactId>jakarta.xml.ws-api</artifactId>
-            <version>4.0.0</version>
-        </dependency>
-        <dependency>
-            <groupId>com.sun.xml.ws</groupId>
-            <artifactId>jaxws-rt</artifactId>
-            <version>4.0.2</version>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.xml.bind</groupId>
-            <artifactId>jakarta.xml.bind-api</artifactId>
-            <version>4.0.0</version>
-        </dependency>
-    </dependencies>
+import com.fraud.client.*;
+import jakarta.xml.ws.Holder;
+import org.springframework.stereotype.Service;
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>com.sun.xml.ws</groupId>
-                <artifactId>jaxws-maven-plugin</artifactId>
-                <version>4.0.2</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>wsimport</goal>
-                        </goals>
-                        <configuration>
-                            <wsdlFiles>
-                                <wsdlFile>${project.basedir}/src/main/resources/wsdl/fraud.wsdl</wsdlFile>
-                            </wsdlFiles>
-                            <packageName>com.fraud.client</packageName>
-                            <sourceDestDir>${project.basedir}/src/main/java</sourceDestDir>
-                            <keep>true</keep>
-                            <extension>true</extension>
+import java.net.URL;
 
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
+/**
+ * Service class for interacting with the Fraud SOAP web service.
+ */
+@Service
+public class FraudService {
 
-</project>
+    /**
+     * Calls the fraud evaluation SOAP service.
+     *
+     * @param request The request object containing fraud evaluation data
+     * @return The result of the fraud evaluation
+     */
+    public FraudEvaluationResult evaluateFraud(TFWSEvaluateGenericV2GenericType request) {
+        try {
+            // Create the service client
+            URL wsdlURL = new URL("file:/C:/ai/fraud/src/main/resources/wsdl/fraud.wsdl");
+            EventHandlerService service = new EventHandlerService(wsdlURL);
+            EHProxy port = service.getEventHandlerServiceHttpPort();
+
+            // Create the request object
+            FFWSEvaluateGenericV22GenericTupleType genericTuple = new FFWSEvaluateGenericV22GenericTupleType();
+            ObjectFactory factory = new ObjectFactory();
+            genericTuple.setGeneric(factory.createFFWSEvaluateGenericV22GenericTupleTypeGeneric(request));
+
+            // Create the holder for the response
+            Holder<FFWSEvaluateGenericV22CustomOutTupleType> customOutHolder = 
+                new Holder<>();
+
+            // Call the SOAP service
+            EHResult result = port.ffWSEvaluateGenericV22(genericTuple, customOutHolder);
+
+            // Create and return the result object
+            FraudEvaluationResult evaluationResult = new FraudEvaluationResult();
+            if (result.getReturnCode() != null) {
+                evaluationResult.setReturnCode(result.getReturnCode().getValue());
+            }
+            if (result.getMessage() != null) {
+                evaluationResult.setMessage(result.getMessage().getValue());
+            }
+            if (result.getAdditionalData() != null) {
+                evaluationResult.setAdditionalData(result.getAdditionalData().getValue());
+            }
+
+            // Add custom output data if available
+            if (customOutHolder.value != null) {
+                if (customOutHolder.value.getActimizeAnalyticsScore() != null) {
+                    evaluationResult.setActimizeAnalyticsScore(customOutHolder.value.getActimizeAnalyticsScore().getValue());
+                }
+                if (customOutHolder.value.getActimizeTransactionScore() != null) {
+                    evaluationResult.setActimizeTransactionScore(customOutHolder.value.getActimizeTransactionScore().getValue());
+                }
+                if (customOutHolder.value.getIsAlertGenerated() != null) {
+                    evaluationResult.setIsAlertGenerated(customOutHolder.value.getIsAlertGenerated().getValue());
+                }
+                if (customOutHolder.value.getModelScoreCd() != null) {
+                    evaluationResult.setModelScoreCd(customOutHolder.value.getModelScoreCd().getValue());
+                }
+                if (customOutHolder.value.getOperationKey() != null) {
+                    evaluationResult.setOperationKey(customOutHolder.value.getOperationKey().getValue());
+                }
+                if (customOutHolder.value.getTransactionKey() != null) {
+                    evaluationResult.setTransactionKey(customOutHolder.value.getTransactionKey().getValue());
+                }
+                if (customOutHolder.value.getUserAnalyticsScore() != null) {
+                    evaluationResult.setUserAnalyticsScore(customOutHolder.value.getUserAnalyticsScore().getValue());
+                }
+            }
+
+            return evaluationResult;
+        } catch (Exception e) {
+            throw new RuntimeException("Error calling fraud evaluation service", e);
+        }
+    }
+}
