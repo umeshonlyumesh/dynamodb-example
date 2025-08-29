@@ -1,112 +1,126 @@
-package com.fraudsdk.controller;
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.5</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+    <groupId>com.dynamodb.mcp</groupId>
+    <artifactId>fraud</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>fraud</name>
+    <description>fraud</description>
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+    <properties>
+        <java.version>21</java.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web-services</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
 
-import com.fraudsdk.converter.FraudRequestConverter;
-import com.fraudsdk.model.FraudRequest;
-import com.fraudsdk.service.FraudSoapService;
-import com.fraudsdk.stub.FFWSEvaluateGenericV22CustomOutTupleType;
-import com.fraudsdk.stub.TFWSEvaluateGenericV2GenericType;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.xml.ws</groupId>
+            <artifactId>jakarta.xml.ws-api</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.sun.xml.ws</groupId>
+            <artifactId>jaxws-rt</artifactId>
+            <version>4.0.2</version>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+    </dependencies>
 
-import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.sun.xml.ws</groupId>
+                <artifactId>jaxws-maven-plugin</artifactId>
+                <version>4.0.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>wsimport</goal>
+                        </goals>
+                        <configuration>
+                            <wsdlFiles>
+                                <wsdlFile>${project.basedir}/src/main/resources/wsdl/fraud.wsdl</wsdlFile>
+                            </wsdlFiles>
+                            <packageName>com.fraud.client</packageName>
+                            <sourceDestDir>${project.basedir}/src/main/java</sourceDestDir>
+                            <keep>true</keep>
+                            <extension>true</extension>
 
-@RestController
-@RequestMapping("/api/fraud")
-public class FraudController {
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
-    private final FraudSoapService fraudSoapService;
-    private final FraudRequestConverter fraudRequestConverter;
-
-    @Autowired
-    public FraudController(FraudSoapService fraudSoapService) {
-        this.fraudSoapService = fraudSoapService;
-        this.fraudRequestConverter = new FraudRequestConverter();
-    }
-
-    /**
-     * Endpoint to evaluate a transaction for fraud
-     * 
-     * @param fraudRequest The request body containing transaction details
-     * @return The fraud evaluation result
-     */
-    @PostMapping("/evaluate")
-    public ResponseEntity<Map<String, Object>> evaluateFraud(@RequestBody FraudRequest fraudRequest) {
-        // Call the SOAP service with the FraudRequest
-        FFWSEvaluateGenericV22CustomOutTupleType response = fraudSoapService.evaluateFraud(fraudRequest);
-
-        // Convert the response to a map for the JSON response
-        Map<String, Object> result = convertResponseToMap(response);
-
-        return ResponseEntity.ok(result);
-    }
-
-    /**
-     * Endpoint to get a sample request for testing
-     * 
-     * @return A sample request
-     */
-    @GetMapping("/sample")
-    public ResponseEntity<FraudRequest> getSampleRequest() {
-        // Create a sample request using the service
-        FraudRequest fraudRequest = fraudSoapService.createSampleFraudRequest();
-
-        return ResponseEntity.ok(fraudRequest);
-    }
-
-    /**
-     * Endpoint to get a minimal sample request for testing
-     * 
-     * @return A minimal sample request with only essential fields
-     */
-    @GetMapping("/sample/minimal")
-    public ResponseEntity<FraudRequest> getMinimalSampleRequest() {
-        // Create a minimal sample request using the service
-        FraudRequest fraudRequest = fraudSoapService.createSampleFraudRequest();
-
-        return ResponseEntity.ok(fraudRequest);
-    }
-
-    /**
-     * Endpoint to get a fully populated request for testing
-     * 
-     * @return A fully populated request with dummy values for all fields
-     */
-    @GetMapping("/sample/full")
-    public ResponseEntity<FraudRequest> getFullSampleRequest() {
-        // Create a fully populated request using the service
-        FraudRequest fraudRequest = fraudSoapService.createFullyPopulatedFraudRequest();
-
-        return ResponseEntity.ok(fraudRequest);
-    }
-
-
-    /**
-     * Helper method to convert a response object to a map
-     * 
-     * @param response The response object
-     * @return A map representation of the response
-     */
-    private Map<String, Object> convertResponseToMap(FFWSEvaluateGenericV22CustomOutTupleType response) {
-        Map<String, Object> result = new HashMap<>();
-
-        // This is a simplified example - in a real application, you would map all relevant fields
-        if (response.getActimizeAnalyticsScore() != null && response.getActimizeAnalyticsScore().getValue() != null) {
-            result.put("analyticsScore", response.getActimizeAnalyticsScore().getValue());
-        }
-
-        if (response.getActimizeTransactionScore() != null && response.getActimizeTransactionScore().getValue() != null) {
-            result.put("transactionScore", response.getActimizeTransactionScore().getValue());
-        }
-
-        if (response.getIsAlertGenerated() != null && response.getIsAlertGenerated().getValue() != null) {
-            result.put("isAlertGenerated", response.getIsAlertGenerated().getValue());
-        }
-
-        // Add more mappings as needed for your specific use case
-
-        return result;
-    }
-}
+</project>
