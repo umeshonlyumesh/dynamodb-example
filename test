@@ -1,8 +1,10 @@
-package com.example.eh.service;
+package com.fraudsdk.controller;
 
-import com.example.eh.api.EvaluateIn;
-import com.example.eh.gen.*;
-import jakarta.xml.bind.JAXBElement;
+
+
+
+import com.fraudsdk.stub.*;
+import javax.xml.bind.JAXBElement;
 import org.springframework.stereotype.Component;
 
 import javax.xml.datatype.DatatypeFactory;
@@ -14,76 +16,35 @@ import java.time.format.DateTimeFormatter;
 @Component
 public class EhRequestBuilder {
 
-  private final ObjectFactory of = new ObjectFactory();
+    private final ObjectFactory of = new ObjectFactory();
 
-  public FFWSEvaluateGenericV22GenericTupleType buildGeneric(EvaluateIn in) throws Exception {
-    FFWSEvaluateGenericV22GenericTupleType g = new FFWSEvaluateGenericV22GenericTupleType();
+    public TFWSEvaluateGenericV2GenericType buildGeneric() throws Exception {
+        TFWSEvaluateGenericV2GenericType g = new TFWSEvaluateGenericV2GenericType();
 
-    // accountReference
-    if (notBlank(in.accountName()) || in.isEmployeeOwned()!=null) {
-      IFMAccountReferenceTypeV4 acct = new IFMAccountReferenceTypeV4();
-      set(acct::setAccountName, of.createIFMAccountReferenceTypeV4AccountName(in.accountName()));
-      set(acct::setIsEmployeeOwned, of.createIFMAccountReferenceTypeV4IsEmployeeOwned(in.isEmployeeOwned()));
-      g.setAccountReference(of.createTFWSEvaluateGenericV2GenericTypeAccountReference(acct));
+
+            IFMAccountReferenceTypeV4 acct = new IFMAccountReferenceTypeV4();
+            set(acct::setAccountName, of.createIFMAccountReferenceTypeV4AccountName("umesh"));
+            set(acct::setIsEmployeeOwned, of.createIFMAccountReferenceTypeV4IsEmployeeOwned(true));
+            g.setAccountReference(of.createTFWSEvaluateGenericV2GenericTypeAccountReference(acct));
+
+
+
+        return g;
     }
 
-    // amount
-    if (in.amountCurrency()!=null || in.amountOriginal()!=null) {
-      IFMAmountTypeV3 amt = new IFMAmountTypeV3();
-      set(amt::setRFPAmountCurrencyCd, of.createIFMAmountTypeV3RFPAmountCurrencyCd(in.amountCurrency()));
-      set(amt::setOriginalAmount, in.amountOriginal()==null ? null : of.createIFMAmountTypeV3OriginalAmount(in.amountOriginal()));
-      g.setAmount(of.createTFWSEvaluateGenericV2GenericTypeAmount(amt));
+    // --------- small helpers to keep code tidy ----------
+
+    @FunctionalInterface
+    private interface Setter<T> { void set(T v); }
+
+    private <T> void set(java.util.function.Consumer<JAXBElement<T>> setter, JAXBElement<T> value) {
+        if (value != null && value.getValue() != null) setter.accept(value);
     }
 
-    // baseTransaction
-    if (notBlank(in.transactionKey()) || notBlank(in.transactionType()) || in.transactionDateTime()!=null) {
-      IFMBaseTransactionTypeV3 base = new IFMBaseTransactionTypeV3();
-      set(base::setTransactionKey, of.createIFMBaseTransactionTypeV3TransactionKey(in.transactionKey()));
-      set(base::setTransactionType, of.createIFMBaseTransactionTypeV3TransactionType(in.transactionType()));
-      // Example of a date field we can populate if you want to keep a timestamp:
-      if (in.transactionDateTime()!=null) {
-        set(base::setInterbankSettlementDate, of.createIFMBaseTransactionTypeV3InterbankSettlementDate(xgc(in.transactionDateTime())));
-      }
-      g.setBaseTransaction(of.createTFWSEvaluateGenericV2GenericTypeBaseTransaction(base));
+    private boolean notBlank(String s) { return s != null && !s.isBlank(); }
+
+    private XMLGregorianCalendar xgc(OffsetDateTime odt) throws Exception {
+        return DatatypeFactory.newInstance()
+                .newXMLGregorianCalendar(odt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
     }
-
-    // partyReference
-    if (notBlank(in.partyName()) || notBlank(in.taxId())) {
-      IFMPartyReferenceTypeV4 p = new IFMPartyReferenceTypeV4();
-      set(p::setName, of.createIFMPartyReferenceTypeV4Name(in.partyName()));
-      set(p::setTaxId, of.createIFMPartyReferenceTypeV4TaxId(in.taxId()));
-      g.setPartyReference(of.createTFWSEvaluateGenericV2GenericTypePartyReference(p));
-    }
-
-    // onlineSession
-    if (notBlank(in.ipAddress())) {
-      IFMOnlineSessionTypeV4 s = new IFMOnlineSessionTypeV4();
-      set(s::setIpAddress, of.createIFMOnlineSessionTypeV4IpAddress(in.ipAddress()));
-      g.setOnlineSession(of.createTFWSEvaluateGenericV2GenericTypeOnlineSession(s));
-    }
-
-    // userDefined (stash operationKey as JSON)
-    IFMUserDefinedComplexTypesV1 ud = new IFMUserDefinedComplexTypesV1();
-    set(ud::setDataOfUserDefinedType, of.createIFMUserDefinedComplexTypesV1DataOfUserDefinedType(
-        "{\"operationKey\":\"" + in.operationKey() + "\"}"));
-    g.setUserDefined(of.createTFWSEvaluateGenericV2GenericTypeUserDefined(ud));
-
-    return g;
-  }
-
-  // --------- small helpers to keep code tidy ----------
-
-  @FunctionalInterface
-  private interface Setter<T> { void set(T v); }
-
-  private <T> void set(Setter<JAXBElement<T>> setter, JAXBElement<T> value) {
-    if (value != null && value.getValue() != null) setter.set(value);
-  }
-
-  private boolean notBlank(String s) { return s != null && !s.isBlank(); }
-
-  private XMLGregorianCalendar xgc(OffsetDateTime odt) throws Exception {
-    return DatatypeFactory.newInstance()
-        .newXMLGregorianCalendar(odt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-  }
 }
