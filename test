@@ -1,42 +1,79 @@
-package com.fraudsdk.config;
+package com.fraudsdk.service;
 
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.oxm.jaxb.Jaxb2Marshaller;
+import com.fraudsdk.stub.*;
+import com.fraudsdk.util.FraudRequestPopulator;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 import org.springframework.ws.client.core.WebServiceTemplate;
-import org.springframework.ws.soap.SoapVersion;
-import org.springframework.ws.soap.saaj.SaajSoapMessageFactory;
 
-import jakarta.xml.soap.MessageFactory;
-import jakarta.xml.soap.SOAPConstants;
-import jakarta.xml.soap.SOAPException;
+import javax.xml.bind.JAXBElement;
+import java.math.BigDecimal;
 
-@Configuration
-public class SoapClientConfig {
+@Service
+public class FraudSoapService {
 
-    @Bean
-    public Jaxb2Marshaller marshaller() {
-        Jaxb2Marshaller marshaller = new Jaxb2Marshaller();
-        // Set the context path to the generated JAXB classes
-        marshaller.setContextPath("com.fraudsdk.stub");
-        return marshaller;
+    private final WebServiceTemplate webServiceTemplate;
+    private final ObjectFactory objectFactory;
+    private final FraudRequestPopulator fraudRequestPopulator;
+
+    /**
+     * Get the ObjectFactory for creating JAXB elements
+     * 
+     * @return The ObjectFactory
+     */
+    public ObjectFactory getObjectFactory() {
+        return objectFactory;
     }
 
-    @Bean
-    public SaajSoapMessageFactory messageFactory() throws SOAPException {
-        MessageFactory messageFactory = MessageFactory.newInstance(SOAPConstants.SOAP_1_1_PROTOCOL);
-        SaajSoapMessageFactory saajSoapMessageFactory = new SaajSoapMessageFactory(messageFactory);
-        saajSoapMessageFactory.setSoapVersion(SoapVersion.SOAP_11);
-        return saajSoapMessageFactory;
+    @Value("${fraud.soap.endpoint:http://dev-ifmapop01:2347/eh/service/EventHandlerService}")
+    private String soapEndpoint;
+
+    @Autowired
+    public FraudSoapService(WebServiceTemplate webServiceTemplate) {
+        this.webServiceTemplate = webServiceTemplate;
+        this.objectFactory = new ObjectFactory();
+        this.fraudRequestPopulator = new FraudRequestPopulator();
     }
 
-    @Bean
-    public WebServiceTemplate webServiceTemplate(Jaxb2Marshaller marshaller, SaajSoapMessageFactory messageFactory) {
-        WebServiceTemplate webServiceTemplate = new WebServiceTemplate();
-        webServiceTemplate.setMarshaller(marshaller);
-        webServiceTemplate.setUnmarshaller(marshaller);
-        webServiceTemplate.setMessageFactory(messageFactory);
-        // The default URI will be set in the client service
-        return webServiceTemplate;
+    /**
+     * Invokes the FF_WS_evaluateGeneric_V22 operation on the SOAP service
+     * 
+     * @param request The request object containing transaction details
+     * @return The response from the SOAP service
+     */
+    public FFWSEvaluateGenericV22CustomOutTupleType evaluateFraud(TFWSEvaluateGenericV2GenericType request) {
+        // Create a holder for the response
+        FFWSEvaluateGenericV22CustomOutTupleType response = objectFactory.createFFWSEvaluateGenericV22CustomOutTupleType();
+
+        // Call the SOAP service
+        Object result = webServiceTemplate.marshalSendAndReceive(soapEndpoint, request);
+
+        // Check if the result is of the expected type
+        if (result instanceof FFWSEvaluateGenericV22CustomOutTupleType) {
+            return (FFWSEvaluateGenericV22CustomOutTupleType) result;
+        } else {
+            throw new RuntimeException("Unexpected response type: " + (result != null ? result.getClass().getName() : "null"));
+        }
+    }
+
+    /**
+     * Helper method to create a sample request for testing
+     * 
+     * @return A sample request object
+     */
+    public TFWSEvaluateGenericV2GenericType createSampleRequest() {
+        // Use the FraudRequestPopulator to create a sample request with essential fields
+        return fraudRequestPopulator.createMinimalRequest();
+    }
+
+    /**
+     * Helper method to create a fully populated request for testing
+     * 
+     * @return A fully populated request object with dummy values for all fields
+     */
+    public TFWSEvaluateGenericV2GenericType createFullyPopulatedRequest() {
+        // Use the FraudRequestPopulator to create a fully populated request
+        return fraudRequestPopulator.createFullyPopulatedRequest();
     }
 }
