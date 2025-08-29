@@ -1,79 +1,89 @@
-package com.fraudsdk.service;
+package com.example.eh.service;
 
-import com.fraudsdk.stub.*;
-import com.fraudsdk.util.FraudRequestPopulator;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.ws.client.core.WebServiceTemplate;
+import com.example.eh.api.EvaluateIn;
+import com.example.eh.gen.*;
+import jakarta.xml.bind.JAXBElement;
+import org.springframework.stereotype.Component;
 
-import javax.xml.bind.JAXBElement;
+import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.XMLGregorianCalendar;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 
-@Service
-public class FraudSoapService {
+@Component
+public class EhRequestBuilder {
 
-    private final WebServiceTemplate webServiceTemplate;
-    private final ObjectFactory objectFactory;
-    private final FraudRequestPopulator fraudRequestPopulator;
+  private final ObjectFactory of = new ObjectFactory();
 
-    /**
-     * Get the ObjectFactory for creating JAXB elements
-     * 
-     * @return The ObjectFactory
-     */
-    public ObjectFactory getObjectFactory() {
-        return objectFactory;
+  public FFWSEvaluateGenericV22GenericTupleType buildGeneric(EvaluateIn in) throws Exception {
+    FFWSEvaluateGenericV22GenericTupleType g = new FFWSEvaluateGenericV22GenericTupleType();
+
+    // accountReference
+    if (notBlank(in.accountName()) || in.isEmployeeOwned()!=null) {
+      IFMAccountReferenceTypeV4 acct = new IFMAccountReferenceTypeV4();
+      set(acct::setAccountName, of.createIFMAccountReferenceTypeV4AccountName(in.accountName()));
+      set(acct::setIsEmployeeOwned, of.createIFMAccountReferenceTypeV4IsEmployeeOwned(in.isEmployeeOwned()));
+      g.setAccountReference(of.createTFWSEvaluateGenericV2GenericTypeAccountReference(acct));
     }
 
-    @Value("${fraud.soap.endpoint:http://dev-ifmapop01:2347/eh/service/EventHandlerService}")
-    private String soapEndpoint;
-
-    @Autowired
-    public FraudSoapService(WebServiceTemplate webServiceTemplate) {
-        this.webServiceTemplate = webServiceTemplate;
-        this.objectFactory = new ObjectFactory();
-        this.fraudRequestPopulator = new FraudRequestPopulator();
+    // amount
+    if (in.amountCurrency()!=null || in.amountOriginal()!=null) {
+      IFMAmountTypeV3 amt = new IFMAmountTypeV3();
+      set(amt::setRFPAmountCurrencyCd, of.createIFMAmountTypeV3RFPAmountCurrencyCd(in.amountCurrency()));
+      set(amt::setOriginalAmount, in.amountOriginal()==null ? null : of.createIFMAmountTypeV3OriginalAmount(in.amountOriginal()));
+      g.setAmount(of.createTFWSEvaluateGenericV2GenericTypeAmount(amt));
     }
 
-    /**
-     * Invokes the FF_WS_evaluateGeneric_V22 operation on the SOAP service
-     * 
-     * @param request The request object containing transaction details
-     * @return The response from the SOAP service
-     */
-    public FFWSEvaluateGenericV22CustomOutTupleType evaluateFraud(TFWSEvaluateGenericV2GenericType request) {
-        // Create a holder for the response
-        FFWSEvaluateGenericV22CustomOutTupleType response = objectFactory.createFFWSEvaluateGenericV22CustomOutTupleType();
-
-        // Call the SOAP service
-        Object result = webServiceTemplate.marshalSendAndReceive(soapEndpoint, request);
-
-        // Check if the result is of the expected type
-        if (result instanceof FFWSEvaluateGenericV22CustomOutTupleType) {
-            return (FFWSEvaluateGenericV22CustomOutTupleType) result;
-        } else {
-            throw new RuntimeException("Unexpected response type: " + (result != null ? result.getClass().getName() : "null"));
-        }
+    // baseTransaction
+    if (notBlank(in.transactionKey()) || notBlank(in.transactionType()) || in.transactionDateTime()!=null) {
+      IFMBaseTransactionTypeV3 base = new IFMBaseTransactionTypeV3();
+      set(base::setTransactionKey, of.createIFMBaseTransactionTypeV3TransactionKey(in.transactionKey()));
+      set(base::setTransactionType, of.createIFMBaseTransactionTypeV3TransactionType(in.transactionType()));
+      // Example of a date field we can populate if you want to keep a timestamp:
+      if (in.transactionDateTime()!=null) {
+        set(base::setInterbankSettlementDate, of.createIFMBaseTransactionTypeV3InterbankSettlementDate(xgc(in.transactionDateTime())));
+      }
+      g.setBaseTransaction(of.createTFWSEvaluateGenericV2GenericTypeBaseTransaction(base));
     }
 
-    /**
-     * Helper method to create a sample request for testing
-     * 
-     * @return A sample request object
-     */
-    public TFWSEvaluateGenericV2GenericType createSampleRequest() {
-        // Use the FraudRequestPopulator to create a sample request with essential fields
-        return fraudRequestPopulator.createMinimalRequest();
+    // partyReference
+    if (notBlank(in.partyName()) || notBlank(in.taxId())) {
+      IFMPartyReferenceTypeV4 p = new IFMPartyReferenceTypeV4();
+      set(p::setName, of.createIFMPartyReferenceTypeV4Name(in.partyName()));
+      set(p::setTaxId, of.createIFMPartyReferenceTypeV4TaxId(in.taxId()));
+      g.setPartyReference(of.createTFWSEvaluateGenericV2GenericTypePartyReference(p));
     }
 
-    /**
-     * Helper method to create a fully populated request for testing
-     * 
-     * @return A fully populated request object with dummy values for all fields
-     */
-    public TFWSEvaluateGenericV2GenericType createFullyPopulatedRequest() {
-        // Use the FraudRequestPopulator to create a fully populated request
-        return fraudRequestPopulator.createFullyPopulatedRequest();
+    // onlineSession
+    if (notBlank(in.ipAddress())) {
+      IFMOnlineSessionTypeV4 s = new IFMOnlineSessionTypeV4();
+      set(s::setIpAddress, of.createIFMOnlineSessionTypeV4IpAddress(in.ipAddress()));
+      g.setOnlineSession(of.createTFWSEvaluateGenericV2GenericTypeOnlineSession(s));
     }
+
+    // userDefined (stash operationKey as JSON)
+    IFMUserDefinedComplexTypesV1 ud = new IFMUserDefinedComplexTypesV1();
+    set(ud::setDataOfUserDefinedType, of.createIFMUserDefinedComplexTypesV1DataOfUserDefinedType(
+        "{\"operationKey\":\"" + in.operationKey() + "\"}"));
+    g.setUserDefined(of.createTFWSEvaluateGenericV2GenericTypeUserDefined(ud));
+
+    return g;
+  }
+
+  // --------- small helpers to keep code tidy ----------
+
+  @FunctionalInterface
+  private interface Setter<T> { void set(T v); }
+
+  private <T> void set(Setter<JAXBElement<T>> setter, JAXBElement<T> value) {
+    if (value != null && value.getValue() != null) setter.set(value);
+  }
+
+  private boolean notBlank(String s) { return s != null && !s.isBlank(); }
+
+  private XMLGregorianCalendar xgc(OffsetDateTime odt) throws Exception {
+    return DatatypeFactory.newInstance()
+        .newXMLGregorianCalendar(odt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+  }
 }
