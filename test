@@ -1,50 +1,112 @@
 package com.fraudsdk.controller;
 
+import com.fraudsdk.converter.FraudRequestConverter;
+import com.fraudsdk.model.FraudRequest;
+import com.fraudsdk.service.FraudSoapService;
+import com.fraudsdk.stub.FFWSEvaluateGenericV22CustomOutTupleType;
+import com.fraudsdk.stub.TFWSEvaluateGenericV2GenericType;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
-
-
-import com.fraudsdk.stub.*;
-import javax.xml.bind.JAXBElement;
-import org.springframework.stereotype.Component;
-
-import javax.xml.datatype.DatatypeFactory;
-import javax.xml.datatype.XMLGregorianCalendar;
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
-@Component
-public class EhRequestBuilder {
+@RestController
+@RequestMapping("/api/fraud")
+public class FraudController {
 
-    private final ObjectFactory of = new ObjectFactory();
+    private final FraudSoapService fraudSoapService;
+    private final FraudRequestConverter fraudRequestConverter;
 
-    public TFWSEvaluateGenericV2GenericType buildGeneric() throws Exception {
-        TFWSEvaluateGenericV2GenericType g = new TFWSEvaluateGenericV2GenericType();
-
-
-            IFMAccountReferenceTypeV4 acct = new IFMAccountReferenceTypeV4();
-            set(acct::setAccountName, of.createIFMAccountReferenceTypeV4AccountName("umesh"));
-            set(acct::setIsEmployeeOwned, of.createIFMAccountReferenceTypeV4IsEmployeeOwned(true));
-            g.setAccountReference(of.createTFWSEvaluateGenericV2GenericTypeAccountReference(acct));
-
-
-
-        return g;
+    @Autowired
+    public FraudController(FraudSoapService fraudSoapService) {
+        this.fraudSoapService = fraudSoapService;
+        this.fraudRequestConverter = new FraudRequestConverter();
     }
 
-    // --------- small helpers to keep code tidy ----------
+    /**
+     * Endpoint to evaluate a transaction for fraud
+     * 
+     * @param fraudRequest The request body containing transaction details
+     * @return The fraud evaluation result
+     */
+    @PostMapping("/evaluate")
+    public ResponseEntity<Map<String, Object>> evaluateFraud(@RequestBody FraudRequest fraudRequest) {
+        // Call the SOAP service with the FraudRequest
+        FFWSEvaluateGenericV22CustomOutTupleType response = fraudSoapService.evaluateFraud(fraudRequest);
 
-    @FunctionalInterface
-    private interface Setter<T> { void set(T v); }
+        // Convert the response to a map for the JSON response
+        Map<String, Object> result = convertResponseToMap(response);
 
-    private <T> void set(java.util.function.Consumer<JAXBElement<T>> setter, JAXBElement<T> value) {
-        if (value != null && value.getValue() != null) setter.accept(value);
+        return ResponseEntity.ok(result);
     }
 
-    private boolean notBlank(String s) { return s != null && !s.isBlank(); }
+    /**
+     * Endpoint to get a sample request for testing
+     * 
+     * @return A sample request
+     */
+    @GetMapping("/sample")
+    public ResponseEntity<FraudRequest> getSampleRequest() {
+        // Create a sample request using the service
+        FraudRequest fraudRequest = fraudSoapService.createSampleFraudRequest();
 
-    private XMLGregorianCalendar xgc(OffsetDateTime odt) throws Exception {
-        return DatatypeFactory.newInstance()
-                .newXMLGregorianCalendar(odt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        return ResponseEntity.ok(fraudRequest);
+    }
+
+    /**
+     * Endpoint to get a minimal sample request for testing
+     * 
+     * @return A minimal sample request with only essential fields
+     */
+    @GetMapping("/sample/minimal")
+    public ResponseEntity<FraudRequest> getMinimalSampleRequest() {
+        // Create a minimal sample request using the service
+        FraudRequest fraudRequest = fraudSoapService.createSampleFraudRequest();
+
+        return ResponseEntity.ok(fraudRequest);
+    }
+
+    /**
+     * Endpoint to get a fully populated request for testing
+     * 
+     * @return A fully populated request with dummy values for all fields
+     */
+    @GetMapping("/sample/full")
+    public ResponseEntity<FraudRequest> getFullSampleRequest() {
+        // Create a fully populated request using the service
+        FraudRequest fraudRequest = fraudSoapService.createFullyPopulatedFraudRequest();
+
+        return ResponseEntity.ok(fraudRequest);
+    }
+
+
+    /**
+     * Helper method to convert a response object to a map
+     * 
+     * @param response The response object
+     * @return A map representation of the response
+     */
+    private Map<String, Object> convertResponseToMap(FFWSEvaluateGenericV22CustomOutTupleType response) {
+        Map<String, Object> result = new HashMap<>();
+
+        // This is a simplified example - in a real application, you would map all relevant fields
+        if (response.getActimizeAnalyticsScore() != null && response.getActimizeAnalyticsScore().getValue() != null) {
+            result.put("analyticsScore", response.getActimizeAnalyticsScore().getValue());
+        }
+
+        if (response.getActimizeTransactionScore() != null && response.getActimizeTransactionScore().getValue() != null) {
+            result.put("transactionScore", response.getActimizeTransactionScore().getValue());
+        }
+
+        if (response.getIsAlertGenerated() != null && response.getIsAlertGenerated().getValue() != null) {
+            result.put("isAlertGenerated", response.getIsAlertGenerated().getValue());
+        }
+
+        // Add more mappings as needed for your specific use case
+
+        return result;
     }
 }
