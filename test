@@ -1,82 +1,55 @@
-package com.fraud.service;
+import javax.net.ssl.*;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import jakarta.xml.ws.BindingProvider;
+import java.util.Map;
 
-import com.fraud.client.*;
-import jakarta.xml.ws.Holder;
-import org.springframework.stereotype.Service;
-
-import java.net.URL;
-
-/**
- * Service class for interacting with the Fraud SOAP web service.
- */
-@Service
-public class FraudService {
-
-    /**
-     * Calls the fraud evaluation SOAP service.
-     *
-     * @param request The request object containing fraud evaluation data
-     * @return The result of the fraud evaluation
-     */
-    public FraudEvaluationResult evaluateFraud(TFWSEvaluateGenericV2GenericType request) {
-        try {
-            // Create the service client
-            URL wsdlURL = new URL("file:/C:/ai/fraud/src/main/resources/wsdl/fraud.wsdl");
-            EventHandlerService service = new EventHandlerService(wsdlURL);
-            EHProxy port = service.getEventHandlerServiceHttpPort();
-
-            // Create the request object
-            FFWSEvaluateGenericV22GenericTupleType genericTuple = new FFWSEvaluateGenericV22GenericTupleType();
-            ObjectFactory factory = new ObjectFactory();
-            genericTuple.setGeneric(factory.createFFWSEvaluateGenericV22GenericTupleTypeGeneric(request));
-
-            // Create the holder for the response
-            Holder<FFWSEvaluateGenericV22CustomOutTupleType> customOutHolder = 
-                new Holder<>();
-
-            // Call the SOAP service
-            EHResult result = port.ffWSEvaluateGenericV22(genericTuple, customOutHolder);
-
-            // Create and return the result object
-            FraudEvaluationResult evaluationResult = new FraudEvaluationResult();
-            if (result.getReturnCode() != null) {
-                evaluationResult.setReturnCode(result.getReturnCode().getValue());
-            }
-            if (result.getMessage() != null) {
-                evaluationResult.setMessage(result.getMessage().getValue());
-            }
-            if (result.getAdditionalData() != null) {
-                evaluationResult.setAdditionalData(result.getAdditionalData().getValue());
-            }
-
-            // Add custom output data if available
-            if (customOutHolder.value != null) {
-                if (customOutHolder.value.getActimizeAnalyticsScore() != null) {
-                    evaluationResult.setActimizeAnalyticsScore(customOutHolder.value.getActimizeAnalyticsScore().getValue());
-                }
-                if (customOutHolder.value.getActimizeTransactionScore() != null) {
-                    evaluationResult.setActimizeTransactionScore(customOutHolder.value.getActimizeTransactionScore().getValue());
-                }
-                if (customOutHolder.value.getIsAlertGenerated() != null) {
-                    evaluationResult.setIsAlertGenerated(customOutHolder.value.getIsAlertGenerated().getValue());
-                }
-                if (customOutHolder.value.getModelScoreCd() != null) {
-                    evaluationResult.setModelScoreCd(customOutHolder.value.getModelScoreCd().getValue());
-                }
-                if (customOutHolder.value.getOperationKey() != null) {
-                    evaluationResult.setOperationKey(customOutHolder.value.getOperationKey().getValue());
-                }
-                if (customOutHolder.value.getTransactionKey() != null) {
-                    evaluationResult.setTransactionKey(customOutHolder.value.getTransactionKey().getValue());
-                }
-                if (customOutHolder.value.getUserAnalyticsScore() != null) {
-                    evaluationResult.setUserAnalyticsScore(customOutHolder.value.getUserAnalyticsScore().getValue());
-                }
-            }
-
-            return evaluationResult;
-        } catch (Exception e) {
-            throw new RuntimeException("Error calling fraud evaluation service", e);
+private static SSLContext trustAllSslContext() throws Exception {
+    TrustManager[] trustAll = new TrustManager[] {
+        new X509TrustManager() {
+            public void checkClientTrusted(X509Certificate[] x, String a) {}
+            public void checkServerTrusted(X509Certificate[] x, String a) {}
+            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
         }
+    };
+    SSLContext sc = SSLContext.getInstance("TLS");
+    sc.init(null, trustAll, new SecureRandom());
+    return sc;
+}
+
+private static HostnameVerifier allowAllHosts() {
+    return (hostname, session) -> true;
+}
+
+public EHResult callIFMXService(FFWSEvaluateGenericV2V2GenerateTupleType request) throws Exception {
+
+    EHProxy obj = callService();                         // your generated port
+    BindingProvider bp = (BindingProvider) obj;
+    Map<String,Object> ctx = bp.getRequestContext();
+
+    // keep your HTTPS endpoint
+    ctx.put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, trustEndPoint);
+
+    if (isMTLSEnabled) {
+        // ... your existing mTLS setup ...
+    } else {
+        // *** HTTPS with SSL validation DISABLED (no mTLS, trust all) ***
+        SSLContext sc = trustAllSslContext();
+        // remove any previous custom SSL first
+        ctx.remove("com.sun.xml.ws.transport.https.client.SSLSocketFactory");
+        ctx.remove("com.sun.xml.ws.transport.https.client.hostname.verifier");
+        // inject trust-all SSL + hostname verifier
+        ctx.put("com.sun.xml.ws.transport.https.client.SSLSocketFactory", sc.getSocketFactory());
+        ctx.put("com.sun.xml.ws.transport.https.client.hostname.verifier", allowAllHosts());
+
+        // optional timeouts (set both RI key variants to be safe)
+        ctx.put("com.sun.xml.ws.connect.timeout",   timeOut);
+        ctx.put("com.sun.xml.ws.request.timeout",   timeOut);
+        ctx.put("com.sun.xml.internal.ws.connect.timeout", timeOut);
+        ctx.put("com.sun.xml.internal.ws.request.timeout", timeOut);
     }
+
+    // call
+    jakarta.xml.ws.Holder<FFWSEvaluateGenericV2V2CustomOutputType> customOut = new jakarta.xml.ws.Holder<>();
+    return obj.ffwsEvaluateGenericV2V2(request, customOut);
 }
