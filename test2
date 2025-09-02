@@ -1,106 +1,215 @@
-spring:
-  kafka:
-    bootstrap-servers: kafka.ecfk-001.mdw-lab.truist-dev.com:443
-    properties:
-      security.protocol: SSL
-      ssl.truststore.location: /etc/kafka/secrets/kafka.client.truststore.jks
-      ssl.truststore.password: changeit
-      ssl.keystore.location: /etc/kafka/secrets/kafka.client.keystore.jks
-      ssl.keystore.password: changeit
-      ssl.key.password: changeit
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-    consumer:
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
-      group-id: my-consumer-group
+import com.github.jknack.handlebars.*;
+import com.github.jknack.handlebars.io.ClassPathTemplateLoader;
 
--------------------------------------------
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 
-spring:
-  kafka:
-    bootstrap-servers: kafka.ecfk-001.mdw-lab.truist-dev.com:443
-    properties:
-      security.protocol: SASL_SSL
-      sasl.mechanism: PLAIN
-      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required \
-        username="pezkafka.truist-dev.com" \
-        password="your-secret-password";
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-    consumer:
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
-      group-id: my-consumer-group
+public class SoapTemplateRenderer {
 
+  public static void main(String[] args) throws Exception {
+    // 1) Load template from classpath: /templates/ff_ws_evaluateGeneric_v22.hbs
+    TemplateLoader loader = new ClassPathTemplateLoader("/templates", ".hbs");
+    Handlebars hb = new Handlebars(loader);
 
-----------------------
-@RestController
-@RequestMapping("/kafka")
-public class KafkaController {
+    // 2) Register helpers
+    registerHelpers(hb);
 
-    private final OrderProducer producer;
+    // 3) Build context (POJOs or Map). Only include what you need—others will nil.
+    Map<String, Object> ctx = sampleContext();
 
-    public KafkaController(OrderProducer producer) {
-        this.producer = producer;
-    }
+    // 4) Compile & apply
+    Template tpl = hb.compile("ff_ws_evaluateGeneric_v22");
+    String soapXml = tpl.apply(ctx);
 
-    @PostMapping("/publish")
-    public String publish(@RequestParam String topic, @RequestParam String msg) {
-        producer.send(topic, msg);
-        return "Message published to " + topic;
-    }
+    System.out.println(soapXml);
+  }
+
+  private static void registerHelpers(Handlebars hb) {
+    // required: <eh:Elem>value</eh:Elem>, throws if null/empty
+    hb.registerHelper("req", (context, options) -> {
+      String elem = options.param(0);
+      Object value = options.param(1, null);
+      if (elem == null || elem.isEmpty()) throw new IllegalArgumentException("elem name missing");
+      if (value == null || value.toString().isBlank()) {
+        throw new HandlebarsException("Required field '" + elem + "' is missing");
+      }
+      return "<eh:" + elem + ">" + escapeXml(value.toString()) + "</eh:" + elem + ">";
+    });
+
+    // text: coerce to string; returns null to let opt handle nilling if absent
+    hb.registerHelper("text", (ctx, opts) -> ctx == null ? null : ctx.toString());
+
+    // bool: enforce boolean (accepts Boolean or "true"/"false")
+    hb.registerHelper("bool", (ctx, opts) -> {
+      if (ctx == null) return null;
+      if (ctx instanceof Boolean) return ctx;
+      String s = ctx.toString().trim().toLowerCase(Locale.ROOT);
+      if ("true".equals(s)) return true;
+      if ("false".equals(s)) return false;
+      throw new HandlebarsException("Boolean expected but got: " + ctx);
+    });
+
+    // dt: accept java.time or ISO-8601 string, return ISO string
+    hb.registerHelper("dt", (ctx, opts) -> {
+      if (ctx == null) return null;
+      if (ctx instanceof OffsetDateTime) return ((OffsetDateTime) ctx).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+      if (ctx instanceof ZonedDateTime) return ((ZonedDateTime) ctx).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+      if (ctx instanceof LocalDateTime) return ((LocalDateTime) ctx).atZone(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+      if (ctx instanceof Instant) return DateTimeFormatter.ISO_INSTANT.format((Instant) ctx);
+      String s = ctx.toString().trim();
+      // assume already ISO if string
+      return s;
+    });
+
+    // opt:
+    // - simple leaf: {{opt "Elem" value}}
+    // - complex subtree already serialized in XML: {{opt "Elem" subtree "complex"}}
+    hb.registerHelper("opt", (context, options) -> {
+      String elem = options.param(0);
+      Object value = options.param(1, null);
+      String mode = options.param(2, "leaf"); // "leaf" or "complex"
+
+      if (elem == null || elem.isEmpty()) throw new IllegalArgumentException("elem name missing");
+
+      if (value == null || value.toString().isBlank()) {
+        return "<eh:" + elem + " xsi:nil=\"true\"/>";
+      }
+
+      if ("complex".equals(mode)) {
+        // value should contain inner XML without the outer <eh:Elem> wrapper
+        String inner = value.toString();
+        return "<eh:" + elem + ">" + inner + "</eh:" + elem + ">";
+      } else {
+        return "<eh:" + elem + ">" + escapeXml(value.toString()) + "</eh:" + elem + ">";
+      }
+    });
+  }
+
+  private static String escapeXml(String s) {
+    return s.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&apos;");
+  }
+
+  /** Minimal context to demonstrate—add any subtrees you need */
+  private static Map<String, Object> sampleContext() {
+    Map<String, Object> ctx = new HashMap<>();
+    Map<String, Object> generic = new HashMap<>();
+    ctx.put("generic", generic);
+
+    // baseTransaction (required: transactionKey)
+    Map<String, Object> baseTx = new HashMap<>();
+    baseTx.put("transactionKey", "TXN-2025-08-30-0001");
+    baseTx.put("transactionType", "PAYMENT");
+    baseTx.put("transactionOriginationSystemCd", "ONLINE_BANKING");
+    baseTx.put("interbankSettlementDate", "2025-08-30T14:35:00Z");
+    generic.put("baseTransaction", baseTx);
+
+    // amount
+    Map<String, Object> amt = new HashMap<>();
+    amt.put("RFPAmountCurrencyCd", "USD");
+    amt.put("normalizedAmount", "1250.75");
+    amt.put("originalAmount", "1250.75");
+    generic.put("amount", amt);
+
+    // partyReference
+    Map<String, Object> partyRef = new HashMap<>();
+    partyRef.put("name", "John Q Customer");
+    partyRef.put("lastName", "Customer");
+    partyRef.put("partyType", "PERSON");
+    partyRef.put("taxId", "999-99-9999");
+
+    Map<String, Object> prAddress = new HashMap<>();
+    prAddress.put("addressLine1", "123 Main St");
+    prAddress.put("city", "Atlanta");
+    prAddress.put("country", "US");
+    prAddress.put("zipPostcode", "30301");
+    partyRef.put("addressData", prAddress);
+
+    Map<String, Object> prContact = new HashMap<>();
+    prContact.put("email1", "john.customer@example.com");
+    prContact.put("mobilePhone", "+14045551234");
+    partyRef.put("contactReference", prContact);
+
+    Map<String, Object> ownership = new HashMap<>();
+    ownership.put("bankingInd", true);
+    ownership.put("savingsInd", true);
+    partyRef.put("accountOwnershipReference", ownership);
+
+    generic.put("partyReference", partyRef);
+
+    // accountReference
+    Map<String, Object> acctRef = new HashMap<>();
+    acctRef.put("accountName", "Primary Checking");
+    acctRef.put("accountType", "CHECKING");
+    acctRef.put("status", "OPEN");
+    acctRef.put("primaryPartyKey", "CUST-12345");
+
+    Map<String, Object> addr = new HashMap<>();
+    addr.put("addressLine1", "123 Main St");
+    addr.put("city", "Atlanta");
+    addr.put("country", "US");
+    addr.put("zipPostcode", "30301");
+    acctRef.put("addressData", addr);
+
+    Map<String, Object> cRef = new HashMap<>();
+    cRef.put("email1", "john.customer@example.com");
+    cRef.put("mobilePhone", "+14045551234");
+    acctRef.put("contactReference", cRef);
+
+    generic.put("accountReference", acctRef);
+
+    // onlineSession
+    Map<String, Object> session = new HashMap<>();
+    session.put("ipAddress", "203.0.113.25");
+    session.put("loginName", "jcustomer01");
+    session.put("secondFactorAuthInd", true);
+    session.put("startDateTime", "2025-08-30T14:30:00Z");
+    session.put("headerUserAgent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    Map<String, Object> httpHeader = new HashMap<>();
+    httpHeader.put("httpHeaderFields", "User-Agent: Mozilla/5.0");
+    session.put("httpHeader", httpHeader);
+    generic.put("onlineSession", session);
+
+    // oppositeAccountReference
+    Map<String, Object> opp = new HashMap<>();
+    opp.put("accountName", "Payee Account");
+    opp.put("accountType", "CHECKING");
+    opp.put("status", "OPEN");
+    generic.put("oppositeAccountReference", opp);
+
+    // remittanceInformation
+    Map<String, Object> rem = new HashMap<>();
+    rem.put("remittanceInfo1", "Invoice 4567");
+    rem.put("remittanceInfo2", "PO 8899");
+    generic.put("remittanceInformation", rem);
+
+    // versionData
+    Map<String, Object> v = new HashMap<>();
+    v.put("transactionActionCd", "CREATE");
+    v.put("transactionStatusCd", "SUBMITTED");
+    v.put("transactionVersionDescription", "Initial submission");
+    generic.put("versionData", v);
+
+    // userReference (optional)
+    Map<String, Object> ur = new HashMap<>();
+    ur.put("name", "John Q Customer");
+    ur.put("birthDate", "1985-04-12T00:00:00Z");
+    Map<String, Object> urAddr = new HashMap<>();
+    urAddr.put("addressLine1", "123 Main St");
+    urAddr.put("city", "Atlanta");
+    urAddr.put("country", "US");
+    urAddr.put("zipPostcode", "30301");
+    ur.put("addressData", urAddr);
+    Map<String, Object> urC = new HashMap<>();
+    urC.put("email1", "john.customer@example.com");
+    urC.put("mobilePhone", "+14045551234");
+    ur.put("contactReference", urC);
+    generic.put("userReference", ur);
+
+    return ctx;
+  }
 }
-
--------------------------------------------
-@Service
-public class OrderConsumer {
-
-    @KafkaListener(topics = "pezkf-orders", groupId = "my-consumer-group")
-    public void listen(String message) {
-        System.out.println("Received message: " + message);
-    }
-}
-
-=============================
-@Service
-public class OrderProducer {
-    private final KafkaTemplate<String, String> kafkaTemplate;
-
-    public OrderProducer(KafkaTemplate<String, String> kafkaTemplate) {
-        this.kafkaTemplate = kafkaTemplate;
-    }
-
-    public void send(String topic, String message) {
-        kafkaTemplate.send(topic, message);
-        System.out.println("Sent message: " + message);
-    }
-}
-==============================
-
-spring:
-  kafka:
-    bootstrap-servers: kafka.ecfk-001.mdw-lab.truist-dev.com:443
-    properties:
-      security.protocol: SASL_SSL
-      sasl.mechanism: PLAIN
-      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required \
-        username="pezkafka.truist-dev.com" \
-        password="your-password";
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-    consumer:
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
-      group-id: my-consumer-group
-
-
