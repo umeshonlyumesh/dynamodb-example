@@ -57,3 +57,113 @@ public class PaymentInfo {
 
 =============
 
+package com.example.payments.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.List;
+
+/**
+ * Root DTO for Payment Engine Request
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PaymentEngineRequest {
+
+    private Header header;
+
+    private PaymentInfo paymentInfo;
+
+    private Qualification qualification;
+
+    private MemoPost memoPost;
+
+    private FraudCheck fraudCheck;
+
+    private CustomerAlert customerAlert; // still flexible (can refine later)
+
+    // ---------- Nested DTOs ----------
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Header {
+        private String sourceId;   // e.g. PE-Zelle | PE-RTP
+        private String operation;  // Qualification | Posting | FraudCheck | CustomerAlert
+        private String requestId;  // Unique correlation id
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Qualification {
+        private Step accountValidation;
+        private Step balanceInquiry;
+        private Step enrichment;
+        private PreAuthorization preAuthorization;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Step {
+        private String side; // (D)ebit | (C)redit | (B)oth
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PreAuthorization {
+        private String side;
+        private String description1;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MemoPost {
+        private String side;
+        private String tranReference;
+        private String description1;
+        private String description2;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class FraudCheck {
+        private String type; // Fraud | AML
+        private List<Parameter> parameters;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Parameter {
+        private String name;
+        private String value;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CustomerAlert {
+        private String alertType;
+        private String message;
+        private String severity;
+    }
+}
+
