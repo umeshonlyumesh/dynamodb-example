@@ -1,55 +1,84 @@
-import javax.net.ssl.*;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
-import jakarta.xml.ws.BindingProvider;
-import java.util.Map;
+package com.fraud;
 
-private static SSLContext trustAllSslContext() throws Exception {
-    TrustManager[] trustAll = new TrustManager[] {
-        new X509TrustManager() {
-            public void checkClientTrusted(X509Certificate[] x, String a) {}
-            public void checkServerTrusted(X509Certificate[] x, String a) {}
-            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-        }
-    };
-    SSLContext sc = SSLContext.getInstance("TLS");
-    sc.init(null, trustAll, new SecureRandom());
-    return sc;
-}
+import com.github.jknack.handlebars.Handlebars;
+import com.github.jknack.handlebars.HandlebarsException;
+import com.github.jknack.handlebars.Template;
+import com.github.jknack.handlebars.io.ClassPathTemplateLoader;
+import com.github.jknack.handlebars.io.TemplateLoader;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-private static HostnameVerifier allowAllHosts() {
-    return (hostname, session) -> true;
-}
+import java.io.IOException;
+import java.util.*;
 
-public EHResult callIFMXService(FFWSEvaluateGenericV2V2GenerateTupleType request) throws Exception {
+/**
+ * Component responsible for loading and processing Handlebars templates.
+ * This class handles template loading, helper registration, and sample data creation.
+ */
+@Component
+public class Loader {
+    private static final Logger logger = LoggerFactory.getLogger(Loader.class);
+    private static final String TEMPLATE_NAME = "fraud";
 
-    EHProxy obj = callService();                         // your generated port
-    BindingProvider bp = (BindingProvider) obj;
-    Map<String,Object> ctx = bp.getRequestContext();
+    private final Handlebars handlebars;
 
-    // keep your HTTPS endpoint
-    ctx.put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, trustEndPoint);
-
-    if (isMTLSEnabled) {
-        // ... your existing mTLS setup ...
-    } else {
-        // *** HTTPS with SSL validation DISABLED (no mTLS, trust all) ***
-        SSLContext sc = trustAllSslContext();
-        // remove any previous custom SSL first
-        ctx.remove("com.sun.xml.ws.transport.https.client.SSLSocketFactory");
-        ctx.remove("com.sun.xml.ws.transport.https.client.hostname.verifier");
-        // inject trust-all SSL + hostname verifier
-        ctx.put("com.sun.xml.ws.transport.https.client.SSLSocketFactory", sc.getSocketFactory());
-        ctx.put("com.sun.xml.ws.transport.https.client.hostname.verifier", allowAllHosts());
-
-        // optional timeouts (set both RI key variants to be safe)
-        ctx.put("com.sun.xml.ws.connect.timeout",   timeOut);
-        ctx.put("com.sun.xml.ws.request.timeout",   timeOut);
-        ctx.put("com.sun.xml.internal.ws.connect.timeout", timeOut);
-        ctx.put("com.sun.xml.internal.ws.request.timeout", timeOut);
+    /**
+     * Constructor that initializes the Handlebars engine with the template loader.
+     */
+    public Loader() {
+        // Use ClassPathTemplateLoader to load templates from the classpath
+        TemplateLoader loader = new ClassPathTemplateLoader("/template", ".hbs");
+        this.handlebars = new Handlebars(loader);
     }
 
-    // call
-    jakarta.xml.ws.Holder<FFWSEvaluateGenericV2V2CustomOutputType> customOut = new jakarta.xml.ws.Holder<>();
-    return obj.ffwsEvaluateGenericV2V2(request, customOut);
+    /**
+     * Initializes the template processing after the bean is constructed.
+     * Registers helpers, creates a sample context, and applies the template.
+     */
+    @PostConstruct
+    public void initializeTemplate() throws IOException {
+        LoadTemplate();
+    }
+
+    /**
+     * Loads and processes the Handlebars template.
+     * This method is used for testing and can be called directly.
+     */
+    public void LoadTemplate() throws IOException {
+        Map<String, Object> model = new HashMap<>();
+        model.put("action", "http://example.com/order/PlaceOrder");
+        model.put("endpoint", "https://api.example.com/soap/order");
+        model.put("customerId", "CIF-12345");
+        model.put("expedited", true); // will render as "true"
+        model.put("requestedDate", "2025-09-01T10:00:00Z");
+        model.put("couponCode", "SAVE10");
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        items.add(new HashMap<>(Map.of(
+                "sku", "ETH-ON-DEMAND",
+                "quantity", 2,
+                "unitPrice", "199.99",
+                "giftWrap", false
+        )));
+        items.add(new HashMap<>(Map.of(
+                "sku", "IP-VPN",
+                "quantity", 1,
+                "unitPrice", "499.00",
+                "giftWrap", true
+        )));
+        model.put("items", items);
+
+        // Compile + render
+
+        Template t = handlebars.compile(TEMPLATE_NAME);
+        String soapXml = t.apply(model);
+
+        System.out.println(soapXml);
+    }
+
+
 }
+
