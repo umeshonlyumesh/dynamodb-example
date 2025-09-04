@@ -1,84 +1,59 @@
-package com.fraud;
+package com.example.payments.dto;
 
-import com.github.jknack.handlebars.Handlebars;
-import com.github.jknack.handlebars.HandlebarsException;
-import com.github.jknack.handlebars.Template;
-import com.github.jknack.handlebars.io.ClassPathTemplateLoader;
-import com.github.jknack.handlebars.io.TemplateLoader;
-import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
- * Component responsible for loading and processing Handlebars templates.
- * This class handles template loading, helper registration, and sample data creation.
+ * Represents the paymentInfo section of the JSON payload
  */
-@Component
-public class Loader {
-    private static final Logger logger = LoggerFactory.getLogger(Loader.class);
-    private static final String TEMPLATE_NAME = "fraud";
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PaymentInfo {
 
-    private final Handlebars handlebars;
+    private String uetr;
+    private String userID;
+    private String transactionId;
+    private String transactionNormalizedCdtTm;
+    private String transactionCdtTm;
+    private String partyId;
+    private String partyIdType;
 
-    /**
-     * Constructor that initializes the Handlebars engine with the template loader.
-     */
-    public Loader() {
-        // Use ClassPathTemplateLoader to load templates from the classpath
-        TemplateLoader loader = new ClassPathTemplateLoader("/template", ".hbs");
-        this.handlebars = new Handlebars(loader);
-    }
+    private String amount;
+    private String normalizedAmount;
+    private String amountType;
 
-    /**
-     * Initializes the template processing after the bean is constructed.
-     * Registers helpers, creates a sample context, and applies the template.
-     */
-    @PostConstruct
-    public void initializeTemplate() throws IOException {
-        LoadTemplate();
-    }
+    private String currency;
 
-    /**
-     * Loads and processes the Handlebars template.
-     * This method is used for testing and can be called directly.
-     */
-    public void LoadTemplate() throws IOException {
-        Map<String, Object> model = new HashMap<>();
-        model.put("action", "http://example.com/order/PlaceOrder");
-        model.put("endpoint", "https://api.example.com/soap/order");
-        model.put("customerId", "CIF-12345");
-        model.put("expedited", true); // will render as "true"
-        model.put("requestedDate", "2025-09-01T10:00:00Z");
-        model.put("couponCode", "SAVE10");
+    private String debitAccountNumber;
+    private String debitAccountNumberType;
+    private String debitBankId;
+    private String debitBankIdType;
+    private String debitAccountDescription;
 
-        List<Map<String, Object>> items = new ArrayList<>();
-        items.add(new HashMap<>(Map.of(
-                "sku", "ETH-ON-DEMAND",
-                "quantity", 2,
-                "unitPrice", "199.99",
-                "giftWrap", false
-        )));
-        items.add(new HashMap<>(Map.of(
-                "sku", "IP-VPN",
-                "quantity", 1,
-                "unitPrice", "499.00",
-                "giftWrap", true
-        )));
-        model.put("items", items);
+    private String creditAccountNumber;
+    private String creditAccountNumberType;
+    private String creditBankId;
+    private String creditBankIdType;
+    private String creditAccountDescription;
 
-        // Compile + render
+    private String methodOfPayment;
+    private String source;
+    private String settlementDate;
+    private String customerSegment;
 
-        Template t = handlebars.compile(TEMPLATE_NAME);
-        String soapXml = t.apply(model);
+    private String transactionSendingSystemCd;
+    private String transactionOriginationSystemCd;
+    private String transactionType;
 
-        System.out.println(soapXml);
-    }
-
-
+    private String sessionKey;
+    private String approverUserID;
+    private String resendDueToFailureInd;
 }
+
+
+=============
 
