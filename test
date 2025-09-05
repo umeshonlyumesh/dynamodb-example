@@ -1,94 +1,49 @@
-package com.example.soaputil;
-
-import jakarta.xml.bind.JAXBContext;
-import jakarta.xml.bind.JAXBElement;
-import jakarta.xml.bind.Unmarshaller;
-import javax.xml.soap.MessageFactory;
-import javax.xml.soap.SOAPConstants;
-import javax.xml.soap.SOAPMessage;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-
-import java.io.ByteArrayInputStream;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
-public final class SoapBodyUnmarshaller {
+public class SoapClientRaw {
 
-    private SoapBodyUnmarshaller() {}
+    public static void main(String[] args) throws Exception {
+        // Your SOAP request XML as a String
+        String soapRequest =
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <CelsiusToFahrenheit xmlns="https://www.w3schools.com/xml/">
+                  <Celsius>25</Celsius>
+                </CelsiusToFahrenheit>
+              </soap:Body>
+            </soap:Envelope>
+            """;
 
-    /**
-     * @param soapXml            full SOAP envelope as String
-     * @param jaxbContextPath    the package of your generated classes (e.g. "com.eh.actimize")
-     * @param rootType           the generated root element class inside Body
-     * @return                   an instance of the generated request object
-     */
-    public static <T> T fromSoap(String soapXml, String jaxbContextPath, Class<T> rootType) {
-        try {
-            // Try SOAP 1.1 first, fall back to 1.2 if needed
-            SOAPMessage message;
-            try {
-                MessageFactory mf11 = MessageFactory.newInstance(SOAPConstants.SOAP_1_1_PROTOCOL);
-                message = mf11.createMessage(null,
-                        new ByteArrayInputStream(soapXml.getBytes(StandardCharsets.UTF_8)));
-            } catch (Exception e11) {
-                MessageFactory mf12 = MessageFactory.newInstance(SOAPConstants.SOAP_1_2_PROTOCOL);
-                message = mf12.createMessage(null,
-                        new ByteArrayInputStream(soapXml.getBytes(StandardCharsets.UTF_8)));
-            }
+        // Endpoint URL (W3Schools temperature conversion demo service)
+        URL url = new URL("https://www.w3schools.com/xml/tempconvert.asmx");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
-            // Find first element node within Body (skip text/whitespace/comments)
-            Node n = message.getSOAPBody().getFirstChild();
-            while (n != null && n.getNodeType() != Node.ELEMENT_NODE) {
-                n = n.getNextSibling();
-            }
-            if (n == null) {
-                throw new IllegalStateException("SOAP Body has no element payload.");
-            }
-            Element bodyRoot = (Element) n;
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "text/xml; charset=utf-8");
+        conn.setRequestProperty("SOAPAction", "https://www.w3schools.com/xml/CelsiusToFahrenheit");
+        conn.setDoOutput(true);
 
-            // Unmarshal using your generated package
-            JAXBContext ctx = JAXBContext.newInstance(jaxbContextPath);
-            Unmarshaller u = ctx.createUnmarshaller();
-
-            // This form preserves the @XmlRootElement/@XmlElementDecl mapping
-            JAXBElement<T> jbe = u.unmarshal(bodyRoot, rootType);
-            return jbe.getValue();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to unmarshal SOAP body into " + rootType.getName(), e);
+        // Write SOAP request
+        try (OutputStream os = conn.getOutputStream()) {
+            byte[] input = soapRequest.getBytes(StandardCharsets.UTF_8);
+            os.write(input);
         }
-    }
-}
 
------------------------------------
+        // Read response
+        int status = conn.getResponseCode();
+        InputStream is = (status >= 200 && status < 300) ? conn.getInputStream() : conn.getErrorStream();
 
-
-// Example: turn the XML you showed in the screenshot into the generated request object
-import com.example.soaputil.SoapBodyUnmarshaller;
-// import your generated classes:
-import com.eh.actimize.FFWSevaluateGenericV22;  // <-- change to your actual class
-
-public class Demo {
-    public static void main(String[] args) {
-        String soap = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                          xmlns:eh="http://eh.actimize.com"
-                          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-          <soapenv:Header/>
-          <soapenv:Body>
-            <eh:FF_WS_evaluateGeneric_V22>
-              <eh:generic>
-                <!-- ... your whole XML from the screenshot ... -->
-              </eh:generic>
-            </eh:FF_WS_evaluateGeneric_V22>
-          </soapenv:Body>
-        </soapenv:Envelope>
-        """;
-
-        FFWSevaluateGenericV22 req =
-            SoapBodyUnmarshaller.fromSoap(soap, "com.eh.actimize", FFWSevaluateGenericV22.class);
-
-        // Now 'req' is your fully populated Java object graph
-        System.out.println("Parsed request = " + req);
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+            String line;
+            System.out.println("=== SOAP Response ===");
+            while ((line = br.readLine()) != null) {
+                System.out.println(line);
+            }
+        }
     }
 }
