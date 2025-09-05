@@ -2,39 +2,66 @@ package com.fraudsdk.service;
 
 import com.github.jknack.handlebars.Handlebars;
 import com.github.jknack.handlebars.Helper;
+import com.github.jknack.handlebars.Options;
 import com.github.jknack.handlebars.Template;
-import com.github.jknack.handlebars.internal.text.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 
-import java.io.IOException;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
 public class Test {
 
-    public static void main(String[] args) throws IOException {
+    private static String xmlEscape(String s) {
+        if (s == null || s.isEmpty()) return s;
+        StringBuilder out = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '&' -> out.append("&amp;");
+                case '<' -> out.append("&lt;");
+                case '>' -> out.append("&gt;");
+                case '"' -> out.append("&quot;");
+                case '\'' -> out.append("&apos;");
+                default  -> out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    public static void main(String[] args) throws Exception {
         Handlebars hb = new Handlebars();
 
-        // Helper: one flat map, check by key
-        hb.registerHelper("optNil", (Helper<String>) (key, options) -> {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> map = (Map<String, Object>) options.context.model();
-            Object raw = map.get(key);
-
-            String ns = "eh";
-            String val = raw == null ? null : raw.toString().trim();
-
-            if (val == null || val.isEmpty()) {
-                return "<" + ns + ":" + key + " xsi:nil=\"true\" />";
-            } else {
-                String safe = StringEscapeUtils.escapeXml11(val);
-                return "<" + ns + ":" + key + ">" + safe + "</" + ns + ":" + key + ">";
+        // STRICT two-arg helper: {{{optNil "TagName" "mapKey"}}}
+        hb.registerHelper("optNil", (Helper<Object>) (ctx, options) -> {
+            Object[] ps = options.params;
+            if (ps == null || ps.length == 0) {
+                return new Handlebars.SafeString("");
             }
+
+            // Force positional usage
+            String mapKey = String.valueOf(ps[0] == null ? "" : ps[0]);
+            String tagName  = String.valueOf(ctx) ;
+
+            Object model = options.context.model();
+            if (!(model instanceof Map<?, ?> rootAny)) {
+                return new Handlebars.SafeString("");
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> root = (Map<String, Object>) rootAny;
+
+            Object raw = root.get(mapKey);
+            String val = (raw == null) ? null : raw.toString().trim();
+
+            final String ns = "eh";
+            final String xml = (val == null || val.isEmpty())
+                    ? "<" + ns + ":" + tagName + " xsi:nil=\"true\" />"
+                    : "<" + ns + ":" + tagName + ">" + xmlEscape(val) + "</" + ns + ":" + tagName + ">";
+
+            return new Handlebars.SafeString(xml);
         });
 
-        // 2) Template — all tags reference flat map keys
-        String templateStr = """
+        String template = """
 <?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope
   xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -46,14 +73,14 @@ public class Test {
       <eh:generic>
 
         <eh:partyRelationReference>
-          {{{optNil "partyRelationType"}}}
-          {{{optNil "startDate"}}}
+          {{{optNil "partyRelationType" "party_rel_type"}}}
+          {{{optNil "startDate" "start_date"}}}
         </eh:partyRelationReference>
 
         <eh:versionData>
-          {{{optNil "transactionActionCd"}}}
-          {{{optNil "transactionStatusCd"}}}
-          {{{optNil "transactionVersionDescription"}}}
+          {{{optNil "transactionActionCd" "txn_action"}}}
+          {{{optNil "transactionStatusCd" "txn_status"}}}
+          {{{optNil "transactionVersionDescription" "txn_ver_desc"}}}
         </eh:versionData>
 
       </eh:generic>
@@ -62,16 +89,15 @@ public class Test {
 </soapenv:Envelope>
 """;
 
-        // 3) Flat map input
-        Map<String, Object> model = new HashMap<>();
-        model.put("partyRelationType", "ABC");             // has value
-        //model.put("startDate", null);
+        Map<String, Object> root = new HashMap<>();
+        root.put("party_rel_type", "ABC");  // -> <eh:partyRelationType>ABC</eh:partyRelationType>
+        root.put("start_date", null);       // -> <eh:startDate xsi:nil="true" />
+        root.put("txn_action", "123");
+        root.put("txn_status", null);
+        root.put("txn_ver_desc", "122");
 
-        // 4) Compile and render
-        Template tpl = hb.compileInline(templateStr);
-        String xml = tpl.apply(model);
-
-        // 5) Print
-        System.out.println(xml);
+        Template tpl = hb.compileInline(template);
+        String out = tpl.apply(root);
+        System.out.println(out);
     }
 }
