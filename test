@@ -1,159 +1,94 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" 
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
-                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>soap-string-to-object</artifactId>
-  <version>1.0.0</version>
-  <properties>
-    <maven.compiler.source>17</maven.compiler.source>
-    <maven.compiler.target>17</maven.compiler.target>
-  </properties>
-
-  <dependencies>
-    <!-- JAXB API + runtime (Jakarta) -->
-    <dependency>
-      <groupId>jakarta.xml.bind</groupId>
-      <artifactId>jakarta.xml.bind-api</artifactId>
-      <version>4.0.2</version>
-    </dependency>
-    <dependency>
-      <groupId>org.glassfish.jaxb</groupId>
-      <artifactId>jaxb-runtime</artifactId>
-      <version>4.0.5</version>
-    </dependency>
-
-    <!-- Jakarta SAAJ for SOAP parsing -->
-    <dependency>
-      <groupId>jakarta.xml.soap</groupId>
-      <artifactId>jakarta.xml.soap-api</artifactId>
-      <version>3.0.2</version>
-    </dependency>
-    <dependency>
-      <groupId>com.sun.xml.messaging.saaj</groupId>
-      <artifactId>saaj-impl</artifactId>
-      <version>3.0.3</version>
-    </dependency>
-  </dependencies>
-</project>
-
-================================
-
-package com.example.util;
-
-import jakarta.xml.bind.JAXBElement;
-
-public final class JaxbHelpers {
-    private JaxbHelpers() {}
-    public static <T> T val(JAXBElement<T> el) { return el == null ? null : el.getValue(); }
-}
-
-================================
-
-package com.example.soap;
+package com.example.soaputil;
 
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.Unmarshaller;
-import jakarta.xml.soap.*;
+import javax.xml.soap.MessageFactory;
+import javax.xml.soap.SOAPConstants;
+import javax.xml.soap.SOAPMessage;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
-import javax.xml.transform.dom.DOMSource;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 
-public class SoapParser {
+public final class SoapBodyUnmarshaller {
 
-    @SafeVarargs
-    public static <T> T fromSoap(String soapXml, Class<T> bodyType, Class<?>... ctx) throws Exception {
-        MessageFactory mf = MessageFactory.newInstance(SOAPConstants.SOAP_1_2_PROTOCOL);
-        SOAPMessage message = mf.createMessage(
-                null,
-                new ByteArrayInputStream(soapXml.getBytes(StandardCharsets.UTF_8))
-        );
+    private SoapBodyUnmarshaller() {}
 
-        SOAPBody body = message.getSOAPBody();
+    /**
+     * @param soapXml            full SOAP envelope as String
+     * @param jaxbContextPath    the package of your generated classes (e.g. "com.eh.actimize")
+     * @param rootType           the generated root element class inside Body
+     * @return                   an instance of the generated request object
+     */
+    public static <T> T fromSoap(String soapXml, String jaxbContextPath, Class<T> rootType) {
+        try {
+            // Try SOAP 1.1 first, fall back to 1.2 if needed
+            SOAPMessage message;
+            try {
+                MessageFactory mf11 = MessageFactory.newInstance(SOAPConstants.SOAP_1_1_PROTOCOL);
+                message = mf11.createMessage(null,
+                        new ByteArrayInputStream(soapXml.getBytes(StandardCharsets.UTF_8)));
+            } catch (Exception e11) {
+                MessageFactory mf12 = MessageFactory.newInstance(SOAPConstants.SOAP_1_2_PROTOCOL);
+                message = mf12.createMessage(null,
+                        new ByteArrayInputStream(soapXml.getBytes(StandardCharsets.UTF_8)));
+            }
 
-        JAXBContext jc = JAXBContext.newInstance(merge(new Class[]{ bodyType }, ctx));
-        Unmarshaller u = jc.createUnmarshaller();
+            // Find first element node within Body (skip text/whitespace/comments)
+            Node n = message.getSOAPBody().getFirstChild();
+            while (n != null && n.getNodeType() != Node.ELEMENT_NODE) {
+                n = n.getNextSibling();
+            }
+            if (n == null) {
+                throw new IllegalStateException("SOAP Body has no element payload.");
+            }
+            Element bodyRoot = (Element) n;
 
-        Object o = u.unmarshal(new DOMSource(body.getFirstChild()));
-        if (o instanceof JAXBElement<?> jbe) return bodyType.cast(jbe.getValue());
-        return bodyType.cast(o);
-    }
+            // Unmarshal using your generated package
+            JAXBContext ctx = JAXBContext.newInstance(jaxbContextPath);
+            Unmarshaller u = ctx.createUnmarshaller();
 
-    private static Class<?>[] merge(Class<?>[] a, Class<?>[] b) {
-        Class<?>[] out = new Class<?>[a.length + (b == null ? 0 : b.length)];
-        System.arraycopy(a, 0, out, 0, a.length);
-        if (b != null) System.arraycopy(b, 0, out, a.length, b.length);
-        return out;
+            // This form preserves the @XmlRootElement/@XmlElementDecl mapping
+            JAXBElement<T> jbe = u.unmarshal(bodyRoot, rootType);
+            return jbe.getValue();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to unmarshal SOAP body into " + rootType.getName(), e);
+        }
     }
 }
 
+-----------------------------------
 
-============================================
 
-package com.example;
+// Example: turn the XML you showed in the screenshot into the generated request object
+import com.example.soaputil.SoapBodyUnmarshaller;
+// import your generated classes:
+import com.eh.actimize.FFWSevaluateGenericV22;  // <-- change to your actual class
 
-import com.example.order.ObjectFactory;
-import com.example.order.PlaceOrderRequest;
-import com.example.soap.SoapParser;
-import com.example.util.JaxbHelpers;
+public class Demo {
+    public static void main(String[] args) {
+        String soap = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                          xmlns:eh="http://eh.actimize.com"
+                          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <soapenv:Header/>
+          <soapenv:Body>
+            <eh:FF_WS_evaluateGeneric_V22>
+              <eh:generic>
+                <!-- ... your whole XML from the screenshot ... -->
+              </eh:generic>
+            </eh:FF_WS_evaluateGeneric_V22>
+          </soapenv:Body>
+        </soapenv:Envelope>
+        """;
 
-public class DemoRead {
-    public static void main(String[] args) throws Exception {
-        // --- SOAP 1.2 request as STRING (inline) ---
-        String soapXml = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
-                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                           xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-              <soap:Header/>
-              <soap:Body>
-                <PlaceOrderRequest xmlns="http://example.com/order">
-                  <customerId>CIF-12345</customerId>
-                  <expedited>true</expedited>
-                  <requestedDate>2025-09-01T10:00:00Z</requestedDate>
-                  <items>
-                    <item>
-                      <sku>ETH-ON-DEMAND</sku>
-                      <quantity>2</quantity>
-                      <unitPrice>199.99</unitPrice>
-                      <giftWrap>false</giftWrap>
-                    </item>
-                    <item>
-                      <sku>IP-VPN</sku>
-                      <quantity>1</quantity>
-                      <unitPrice>499.00</unitPrice>
-                      <giftWrap xsi:nil="true"/>
-                    </item>
-                  </items>
-                </PlaceOrderRequest>
-              </soap:Body>
-            </soap:Envelope>
-            """;
+        FFWSevaluateGenericV22 req =
+            SoapBodyUnmarshaller.fromSoap(soap, "com.eh.actimize", FFWSevaluateGenericV22.class);
 
-        // Parse SOAP string -> JAXB object
-        PlaceOrderRequest req = SoapParser.fromSoap(
-                soapXml,
-                PlaceOrderRequest.class,
-                ObjectFactory.class // include factory so QNames resolve
-        );
-
-        // Print values to verify
-        System.out.println("CustomerId  = " + JaxbHelpers.val(req.getCustomerId()));
-        System.out.println("Expedited   = " + JaxbHelpers.val(req.getExpedited()));
-        System.out.println("Requested   = " + JaxbHelpers.val(req.getRequestedDate()));
-
-        int i = 0;
-        for (PlaceOrderRequest.Item it : req.getItems()) {
-            System.out.printf("Item[%d]: sku=%s, qty=%s, price=%s, giftWrap=%s%n",
-                    i++,
-                    JaxbHelpers.val(it.getSku()),
-                    JaxbHelpers.val(it.getQuantity()),
-                    JaxbHelpers.val(it.getUnitPrice()),
-                    JaxbHelpers.val(it.getGiftWrap())
-            );
-        }
+        // Now 'req' is your fully populated Java object graph
+        System.out.println("Parsed request = " + req);
     }
 }
