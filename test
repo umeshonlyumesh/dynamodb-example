@@ -1,103 +1,159 @@
-package com.fraudsdk.service;
+<project xmlns="http://maven.apache.org/POM/4.0.0" 
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>soap-string-to-object</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+  </properties>
 
-import com.github.jknack.handlebars.Handlebars;
-import com.github.jknack.handlebars.Helper;
-import com.github.jknack.handlebars.Options;
-import com.github.jknack.handlebars.Template;
-import org.apache.commons.text.StringEscapeUtils;
+  <dependencies>
+    <!-- JAXB API + runtime (Jakarta) -->
+    <dependency>
+      <groupId>jakarta.xml.bind</groupId>
+      <artifactId>jakarta.xml.bind-api</artifactId>
+      <version>4.0.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.glassfish.jaxb</groupId>
+      <artifactId>jaxb-runtime</artifactId>
+      <version>4.0.5</version>
+    </dependency>
 
-import java.util.HashMap;
-import java.util.Map;
+    <!-- Jakarta SAAJ for SOAP parsing -->
+    <dependency>
+      <groupId>jakarta.xml.soap</groupId>
+      <artifactId>jakarta.xml.soap-api</artifactId>
+      <version>3.0.2</version>
+    </dependency>
+    <dependency>
+      <groupId>com.sun.xml.messaging.saaj</groupId>
+      <artifactId>saaj-impl</artifactId>
+      <version>3.0.3</version>
+    </dependency>
+  </dependencies>
+</project>
 
-public class Test {
+================================
 
-    private static String xmlEscape(String s) {
-        if (s == null || s.isEmpty()) return s;
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '&' -> out.append("&amp;");
-                case '<' -> out.append("&lt;");
-                case '>' -> out.append("&gt;");
-                case '"' -> out.append("&quot;");
-                case '\'' -> out.append("&apos;");
-                default  -> out.append(c);
-            }
-        }
-        return out.toString();
+package com.example.util;
+
+import jakarta.xml.bind.JAXBElement;
+
+public final class JaxbHelpers {
+    private JaxbHelpers() {}
+    public static <T> T val(JAXBElement<T> el) { return el == null ? null : el.getValue(); }
+}
+
+================================
+
+package com.example.soap;
+
+import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBElement;
+import jakarta.xml.bind.Unmarshaller;
+import jakarta.xml.soap.*;
+
+import javax.xml.transform.dom.DOMSource;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
+public class SoapParser {
+
+    @SafeVarargs
+    public static <T> T fromSoap(String soapXml, Class<T> bodyType, Class<?>... ctx) throws Exception {
+        MessageFactory mf = MessageFactory.newInstance(SOAPConstants.SOAP_1_2_PROTOCOL);
+        SOAPMessage message = mf.createMessage(
+                null,
+                new ByteArrayInputStream(soapXml.getBytes(StandardCharsets.UTF_8))
+        );
+
+        SOAPBody body = message.getSOAPBody();
+
+        JAXBContext jc = JAXBContext.newInstance(merge(new Class[]{ bodyType }, ctx));
+        Unmarshaller u = jc.createUnmarshaller();
+
+        Object o = u.unmarshal(new DOMSource(body.getFirstChild()));
+        if (o instanceof JAXBElement<?> jbe) return bodyType.cast(jbe.getValue());
+        return bodyType.cast(o);
     }
 
-    @SuppressWarnings("unchecked")
+    private static Class<?>[] merge(Class<?>[] a, Class<?>[] b) {
+        Class<?>[] out = new Class<?>[a.length + (b == null ? 0 : b.length)];
+        System.arraycopy(a, 0, out, 0, a.length);
+        if (b != null) System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+}
+
+
+============================================
+
+package com.example;
+
+import com.example.order.ObjectFactory;
+import com.example.order.PlaceOrderRequest;
+import com.example.soap.SoapParser;
+import com.example.util.JaxbHelpers;
+
+public class DemoRead {
     public static void main(String[] args) throws Exception {
-        Handlebars hb = new Handlebars();
+        // --- SOAP 1.2 request as STRING (inline) ---
+        String soapXml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+              <soap:Header/>
+              <soap:Body>
+                <PlaceOrderRequest xmlns="http://example.com/order">
+                  <customerId>CIF-12345</customerId>
+                  <expedited>true</expedited>
+                  <requestedDate>2025-09-01T10:00:00Z</requestedDate>
+                  <items>
+                    <item>
+                      <sku>ETH-ON-DEMAND</sku>
+                      <quantity>2</quantity>
+                      <unitPrice>199.99</unitPrice>
+                      <giftWrap>false</giftWrap>
+                    </item>
+                    <item>
+                      <sku>IP-VPN</sku>
+                      <quantity>1</quantity>
+                      <unitPrice>499.00</unitPrice>
+                      <giftWrap xsi:nil="true"/>
+                    </item>
+                  </items>
+                </PlaceOrderRequest>
+              </soap:Body>
+            </soap:Envelope>
+            """;
 
-        // STRICT two-arg helper: {{{optNil "TagName" "mapKey"}}}
-        hb.registerHelper("optNil", (Helper<Object>) (ctx, options) -> {
-            Object[] ps = options.params;
-            if (ps == null || ps.length == 0) {
-                return new Handlebars.SafeString("");
-            }
+        // Parse SOAP string -> JAXB object
+        PlaceOrderRequest req = SoapParser.fromSoap(
+                soapXml,
+                PlaceOrderRequest.class,
+                ObjectFactory.class // include factory so QNames resolve
+        );
 
-            // Force positional usage
-            String mapKey = String.valueOf(ps[0] == null ? "" : ps[0]);
-            String tagName  = String.valueOf(ctx) ;
+        // Print values to verify
+        System.out.println("CustomerId  = " + JaxbHelpers.val(req.getCustomerId()));
+        System.out.println("Expedited   = " + JaxbHelpers.val(req.getExpedited()));
+        System.out.println("Requested   = " + JaxbHelpers.val(req.getRequestedDate()));
 
-            Object model = options.context.model();
-            if (!(model instanceof Map<?, ?> rootAny)) {
-                return new Handlebars.SafeString("");
-            }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> root = (Map<String, Object>) rootAny;
-
-            Object raw = root.get(mapKey);
-            String val = (raw == null) ? null : raw.toString().trim();
-
-            final String ns = "eh";
-            final String xml = (val == null || val.isEmpty())
-                    ? "<" + ns + ":" + tagName + " xsi:nil=\"true\" />"
-                    : "<" + ns + ":" + tagName + ">" + xmlEscape(val) + "</" + ns + ":" + tagName + ">";
-
-            return new Handlebars.SafeString(xml);
-        });
-
-        String template = """
-<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope
-  xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-  xmlns:eh="http://eh.actimize.com"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <eh:FF_WS_evaluateGeneric_V22>
-      <eh:generic>
-
-        <eh:partyRelationReference>
-          {{{optNil "partyRelationType" "party_rel_type"}}}
-          {{{optNil "startDate" "start_date"}}}
-        </eh:partyRelationReference>
-
-        <eh:versionData>
-          {{{optNil "transactionActionCd" "txn_action"}}}
-          {{{optNil "transactionStatusCd" "txn_status"}}}
-          {{{optNil "transactionVersionDescription" "txn_ver_desc"}}}
-        </eh:versionData>
-
-      </eh:generic>
-    </eh:FF_WS_evaluateGeneric_V22>
-  </soapenv:Body>
-</soapenv:Envelope>
-""";
-
-        Map<String, Object> root = new HashMap<>();
-        root.put("party_rel_type", "ABC");  // -> <eh:partyRelationType>ABC</eh:partyRelationType>
-        root.put("start_date", null);       // -> <eh:startDate xsi:nil="true" />
-        root.put("txn_action", "123");
-        root.put("txn_status", null);
-        root.put("txn_ver_desc", "122");
-
-        Template tpl = hb.compileInline(template);
-        String out = tpl.apply(root);
-        System.out.println(out);
+        int i = 0;
+        for (PlaceOrderRequest.Item it : req.getItems()) {
+            System.out.printf("Item[%d]: sku=%s, qty=%s, price=%s, giftWrap=%s%n",
+                    i++,
+                    JaxbHelpers.val(it.getSku()),
+                    JaxbHelpers.val(it.getQuantity()),
+                    JaxbHelpers.val(it.getUnitPrice()),
+                    JaxbHelpers.val(it.getGiftWrap())
+            );
+        }
     }
 }
