@@ -1,167 +1,77 @@
-package com.example.payments.dto;
+package com.fraudsdk.service;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.github.jknack.handlebars.Handlebars;
+import com.github.jknack.handlebars.Helper;
+import com.github.jknack.handlebars.Template;
+import com.github.jknack.handlebars.internal.text.StringEscapeUtils;
 
-/**
- * Represents the paymentInfo section of the JSON payload
- */
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class PaymentInfo {
+import java.io.IOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
-    private String uetr;
-    private String userID;
-    private String transactionId;
-    private String transactionNormalizedCdtTm;
-    private String transactionCdtTm;
-    private String partyId;
-    private String partyIdType;
+public class Test {
 
-    private String amount;
-    private String normalizedAmount;
-    private String amountType;
+    public static void main(String[] args) throws IOException {
+        Handlebars hb = new Handlebars();
 
-    private String currency;
+        // Helper: one flat map, check by key
+        hb.registerHelper("optNil", (Helper<String>) (key, options) -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) options.context.model();
+            Object raw = map.get(key);
 
-    private String debitAccountNumber;
-    private String debitAccountNumberType;
-    private String debitBankId;
-    private String debitBankIdType;
-    private String debitAccountDescription;
+            String ns = "eh";
+            String val = raw == null ? null : raw.toString().trim();
 
-    private String creditAccountNumber;
-    private String creditAccountNumberType;
-    private String creditBankId;
-    private String creditBankIdType;
-    private String creditAccountDescription;
+            if (val == null || val.isEmpty()) {
+                return "<" + ns + ":" + key + " xsi:nil=\"true\" />";
+            } else {
+                String safe = StringEscapeUtils.escapeXml11(val);
+                return "<" + ns + ":" + key + ">" + safe + "</" + ns + ":" + key + ">";
+            }
+        });
 
-    private String methodOfPayment;
-    private String source;
-    private String settlementDate;
-    private String customerSegment;
+        // 2) Template — all tags reference flat map keys
+        String templateStr = """
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope
+  xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:eh="http://eh.actimize.com"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <eh:FF_WS_evaluateGeneric_V22>
+      <eh:generic>
 
-    private String transactionSendingSystemCd;
-    private String transactionOriginationSystemCd;
-    private String transactionType;
+        <eh:partyRelationReference>
+          {{{optNil "partyRelationType"}}}
+          {{{optNil "startDate"}}}
+        </eh:partyRelationReference>
 
-    private String sessionKey;
-    private String approverUserID;
-    private String resendDueToFailureInd;
-}
+        <eh:versionData>
+          {{{optNil "transactionActionCd"}}}
+          {{{optNil "transactionStatusCd"}}}
+          {{{optNil "transactionVersionDescription"}}}
+        </eh:versionData>
 
+      </eh:generic>
+    </eh:FF_WS_evaluateGeneric_V22>
+  </soapenv:Body>
+</soapenv:Envelope>
+""";
 
-=============
-package com.example.payments.dto;
+        // 3) Flat map input
+        Map<String, Object> model = new HashMap<>();
+        model.put("partyRelationType", "ABC");             // has value
+        //model.put("startDate", null);
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+        // 4) Compile and render
+        Template tpl = hb.compileInline(templateStr);
+        String xml = tpl.apply(model);
 
-import java.util.List;
-
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class PaymentEngineRequest {
-
-    private Header header;
-    private PaymentInfo paymentInfo;
-    private Qualification qualification;
-    private MemoPost memoPost;
-    private FraudCheck fraudCheck;
-    private CustomerAlert customerAlert;
-
-    // ---------- Nested DTOs ----------
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class Header {
-        private String sourceId;
-        private Operation operation; // now enum
-        private String requestId;
-    }
-
-    public enum Operation {
-        QUALIFICATION,
-        POSTING,
-        FRAUD_CHECK,
-        CUSTOMER_ALERT
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class Qualification {
-        private Step accountValidation;
-        private Step balanceInquiry;
-        private Step enrichment;
-        private PreAuthorization preAuthorization;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class Step {
-        private String side; // (D)ebit | (C)redit | (B)oth
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class PreAuthorization {
-        private String side;
-        private String description1;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class MemoPost {
-        private String side;
-        private String tranReference;
-        private String description1;
-        private String description2;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class FraudCheck {
-        private String type; // Fraud | AML
-        private List<Parameter> parameters;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class Parameter {
-        private String name;
-        private String value;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class CustomerAlert {
-        private String alertType;
-        private String message;
-        private String severity;
+        // 5) Print
+        System.out.println(xml);
     }
 }
-
