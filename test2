@@ -1,55 +1,32 @@
-private static void registerHelpers(Handlebars hb) {
+import jakarta.net.ssl.SSLContext;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.ssl.SSLContexts;
+import org.apache.hc.core5.ssl.TrustAllStrategy;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
 
-  hb.registerHelper("req", (context, options) -> {
-    String elem = options.param(0);
-    Object value = options.param(1, null);
-    if (elem == null || elem.isEmpty()) throw new IllegalArgumentException("elem name missing");
-    if (value == null || value.toString().isBlank()) {
-      throw new IllegalStateException("Required field '" + elem + "' is missing");
+@Configuration
+public class UnsafeRestClientConfig {
+
+    @Bean
+    public RestClient restClient() throws Exception {
+        SSLContext sslContext = SSLContexts.custom()
+                .loadTrustMaterial(null, TrustAllStrategy.INSTANCE)
+                .build();
+
+        CloseableHttpClient httpClient = HttpClients.custom()
+                .setSSLContext(sslContext)
+                .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                .build();
+
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+
+        return RestClient.builder()
+                .requestFactory(factory)
+                .build();
     }
-    return "<eh:" + elem + ">" + escapeXml(value.toString()) + "</eh:" + elem + ">";
-  });
-
-  hb.registerHelper("text", (ctx, opts) -> ctx == null ? null : ctx.toString());
-
-  hb.registerHelper("bool", (ctx, opts) -> {
-    if (ctx == null) return null;
-    if (ctx instanceof Boolean) return ctx;
-    String s = ctx.toString().trim().toLowerCase(Locale.ROOT);
-    if ("true".equals(s)) return true;
-    if ("false".equals(s)) return false;
-    throw new IllegalArgumentException("Boolean expected but got: " + ctx);
-  });
-
-  hb.registerHelper("dt", (ctx, opts) -> {
-    if (ctx == null) return null;
-    if (ctx instanceof java.time.OffsetDateTime odt)
-      return odt.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-    if (ctx instanceof java.time.ZonedDateTime zdt)
-      return zdt.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-    if (ctx instanceof java.time.LocalDateTime ldt)
-      return ldt.atZone(java.time.ZoneOffset.UTC)
-                .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-    if (ctx instanceof java.time.Instant inst)
-      return java.time.format.DateTimeFormatter.ISO_INSTANT.format(inst);
-    return ctx.toString().trim(); // assume already ISO
-  });
-
-  // opt:
-  //  - leaf:    {{opt "Elem" value}}
-  //  - complex: {{opt "Elem" subtreeXml "complex"}}
-  hb.registerHelper("opt", (context, options) -> {
-    String elem = options.param(0);
-    Object value = options.param(1, null);
-    String mode = options.param(2, "leaf");
-    if (elem == null || elem.isEmpty()) throw new IllegalArgumentException("elem name missing");
-
-    if (value == null || value.toString().isBlank()) {
-      return "<eh:" + elem + " xsi:nil=\"true\"/>";
-    }
-    if ("complex".equals(mode)) {
-      return "<eh:" + elem + ">" + value + "</eh:" + elem + ">";
-    }
-    return "<eh:" + elem + ">" + escapeXml(value.toString()) + "</eh:" + elem + ">";
-  });
 }
