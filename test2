@@ -1,20 +1,79 @@
-SELECT 
-    CASE
-        WHEN UPPER(cps_state) = 'NEW'      AND UPPER(status) = 'REPAIR'            THEN 'Processing'
-        WHEN UPPER(cps_state) = 'ACTIVE'   AND UPPER(status) = 'REPAIR'            THEN 'Processing'
-        WHEN UPPER(cps_state) = 'COMPLETED'AND UPPER(status) = 'COMPLETE'          THEN 'Completed'
-        WHEN UPPER(cps_state) = 'CANCELLED'AND UPPER(status) = 'CANCELLED'         THEN 'Canceled'
-        WHEN UPPER(cps_state) = 'REJECTED' AND UPPER(status) = 'REJECTED'          THEN 'Rejected'
-        WHEN UPPER(cps_state) = 'POSTEX'   AND UPPER(status) = 'POSTEX'            THEN 'Processing'
-        WHEN UPPER(cps_state) = 'REPAIR'   AND UPPER(status) = 'REPAIR'            THEN 'Processing'
-        WHEN UPPER(cps_state) = 'HELD'     AND UPPER(status) = 'WAIT_CONFIRMATION' THEN 'Processing'
-        WHEN UPPER(cps_state) = 'RETURNED' AND UPPER(status) = 'RETURNED'          THEN 'Returned'
-        WHEN UPPER(cps_state) = 'NA'       AND UPPER(status) = 'NAK'               THEN 'Rejected'
-        WHEN UPPER(cps_state) = 'ACTIVE'   AND UPPER(status) IN ('CDBWAIT','BIWAITQ','CDBSTOP','MP_WAIT','VERIFY','MP_STOP')
-                                                                               THEN 'Processing'
-        WHEN UPPER(cps_state) = 'NA'       AND UPPER(status) IN ('WAITRETURN','PEND_APPROV')
-                                                                               THEN 'Processing'
-        WHEN UPPER(cps_state) = 'HELD'     AND UPPER(status) = 'NSF'               THEN 'Processing'
-        ELSE 'Unknown'
-    END AS business_status
-FROM your_table;
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ✅ Parent POM from Spring Boot manages compiler & other plugins -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.4</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>com.truist.core.sdk.pes</groupId>
+    <artifactId>fraud-core-sdk</artifactId>
+    <version>0.0.1</version>
+    <name>fraud-core-sdk</name>
+    <description>Fraud starter SDK with RestClient auto-configuration</description>
+
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+
+    <dependencies>
+        <!-- Spring Boot auto-config (for @AutoConfiguration) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- Provides RestClient (from Spring Web 6.x) -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+
+        <!-- Lombok for boilerplate code -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Annotation processor for @ConfigurationProperties metadata -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Shared contracts -->
+        <dependency>
+            <groupId>com.truist.core.integration</groupId>
+            <artifactId>core-integration-common</artifactId>
+            <version>${core-integration.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.truist.core.integration.spi</groupId>
+            <artifactId>core-integration-spi</artifactId>
+            <version>${core-integration.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Compiler plugin version managed by parent POM -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>${java.version}</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
