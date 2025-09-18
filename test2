@@ -1,5 +1,176 @@
-package com.example.demo.service;
+# Spring Boot EM Demo — Full Project
 
+This repository is a minimal, runnable Spring Boot 3 / Java 17 project that demonstrates **application-managed `EntityManager` usage** with both manual `try/catch/finally` close and `try-with-resources` (adapter) patterns. It uses H2 in-memory DB so nothing external is required.
+
+---
+
+## File tree
+
+```
+em-demo/
+├── pom.xml
+├── README.md
+├── src
+│   ├── main
+│   │   ├── java
+│   │   │   └── com
+│   │   │       └── example
+│   │   │           └── emdemo
+│   │   │               ├── EmDemoApplication.java
+│   │   │               ├── controller
+│   │   │               │   └── DemoController.java
+│   │   │               ├── entity
+│   │   │               │   └── MyEntity.java
+│   │   │               └── service
+│   │   │                   ├── ManualEntityManagerService.java
+│   │   │                   ├── AutoCloseableEntityManagerService.java
+│   │   │                   └── EntityManagerAutoCloseable.java
+│   │   └── resources
+│   │       ├── application.yml
+│   │       └── data.sql
+│   └── test
+│       └── java
+│           └── com
+│               └── example
+│                   └── emdemo
+│                       └── EmDemoApplicationTests.java
+```
+
+---
+
+> **Note:** The project files are included below. Copy each file into the same path shown in the file tree.
+
+---
+
+## `pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="
+           http://maven.apache.org/POM/4.0.0
+           http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>em-demo</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>em-demo</name>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.1.6</version>
+        <relativePath/>
+    </parent>
+
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+---
+
+## `src/main/java/com/example/emdemo/EmDemoApplication.java`
+
+```java
+package com.example.emdemo;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class EmDemoApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(EmDemoApplication.class, args);
+    }
+}
+```
+
+---
+
+## `src/main/java/com/example/emdemo/entity/MyEntity.java`
+
+```java
+package com.example.emdemo.entity;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+
+@Entity
+public class MyEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+
+    // constructors
+    public MyEntity() {}
+
+    public MyEntity(String name) { this.name = name; }
+
+    // getters / setters
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+}
+```
+
+---
+
+## `src/main/java/com/example/emdemo/service/ManualEntityManagerService.java`
+
+```java
+package com.example.emdemo.service;
+
+import com.example.emdemo.entity.MyEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
@@ -20,7 +191,7 @@ public class ManualEntityManagerService {
         EntityManager em = null;
         EntityTransaction tx = null;
         try {
-            em = emf.createEntityManager();     // application-managed EM
+            em = emf.createEntityManager();
             tx = em.getTransaction();
             tx.begin();
 
@@ -30,203 +201,264 @@ public class ManualEntityManagerService {
             return Optional.ofNullable(entity);
         } catch (RuntimeException ex) {
             if (tx != null && tx.isActive()) {
-                try { tx.rollback(); } catch (Exception rbEx) {
-                    // log rollback failure
-                }
+                try { tx.rollback(); } catch (Exception rbEx) { /* log */ }
             }
-            throw ex; // rethrow or wrap
+            throw ex;
         } finally {
             if (em != null && em.isOpen()) {
-                try {
-                    em.close(); // MUST close application-managed EM
-                } catch (Exception closeEx) {
-                    // log close failure (rare)
-                }
+                try { em.close(); } catch (Exception closeEx) { /* log */ }
+            }
+        }
+    }
+
+    public MyEntity save_manualClose(MyEntity entity) {
+        EntityManager em = null;
+        EntityTransaction tx = null;
+        try {
+            em = emf.createEntityManager();
+            tx = em.getTransaction();
+            tx.begin();
+
+            em.persist(entity);
+
+            tx.commit();
+            return entity;
+        } catch (RuntimeException ex) {
+            if (tx != null && tx.isActive()) { try { tx.rollback(); } catch (Exception ignored) {} }
+            throw ex;
+        } finally {
+            if (em != null && em.isOpen()) { try { em.close(); } catch (Exception ignored) {} }
+        }
+    }
+}
+```
+
+---
+
+## `src/main/java/com/example/emdemo/service/EntityManagerAutoCloseable.java`
+
+```java
+package com.example.emdemo.service;
+
+import jakarta.persistence.EntityManager;
+
+public final class EntityManagerAutoCloseable implements AutoCloseable {
+    private final EntityManager em;
+
+    public EntityManagerAutoCloseable(EntityManager em) {
+        this.em = em;
+    }
+
+    public EntityManager get() { return em; }
+
+    @Override
+    public void close() {
+        if (em != null && em.isOpen()) {
+            em.close();
+        }
+    }
+}
+```
+
+---
+
+## `src/main/java/com/example/emdemo/service/AutoCloseableEntityManagerService.java`
+
+```java
+package com.example.emdemo.service;
+
+import com.example.emdemo.entity.MyEntity;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.EntityTransaction;
+import org.springframework.stereotype.Service;
+
+import java.util.Optional;
+
+@Service
+public class AutoCloseableEntityManagerService {
+
+    private final EntityManagerFactory emf;
+
+    public AutoCloseableEntityManagerService(EntityManagerFactory emf) {
+        this.emf = emf;
+    }
+
+    public Optional<MyEntity> findById_tryWithResources(Long id) {
+        try (EntityManagerAutoCloseable emWrap = new EntityManagerAutoCloseable(emf.createEntityManager())) {
+            var em = emWrap.get();
+            EntityTransaction tx = em.getTransaction();
+            tx.begin();
+            try {
+                var entity = em.find(MyEntity.class, id);
+                tx.commit();
+                return Optional.ofNullable(entity);
+            } catch (RuntimeException ex) {
+                if (tx.isActive()) tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    public MyEntity save_tryWithResources(MyEntity e) {
+        try (EntityManagerAutoCloseable emWrap = new EntityManagerAutoCloseable(emf.createEntityManager())) {
+            var em = emWrap.get();
+            var tx = em.getTransaction();
+            tx.begin();
+            try {
+                em.persist(e);
+                tx.commit();
+                return e;
+            } catch (RuntimeException ex) {
+                if (tx.isActive()) tx.rollback();
+                throw ex;
             }
         }
     }
 }
+```
 
-===============================
+---
 
-package com.example.demo.service;
+## `src/main/java/com/example/emdemo/controller/DemoController.java`
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.EntityManagerFactory;
-import jakarta.persistence.EntityTransaction;
-import org.springframework.stereotype.Service;
+```java
+package com.example.emdemo.controller;
 
+import com.example.emdemo.entity.MyEntity;
+import com.example.emdemo.service.AutoCloseableEntityManagerService;
+import com.example.emdemo.service.ManualEntityManagerService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.net.URI;
 import java.util.Optional;
 
-@Service
-public class AutoCloseableEntityManagerService {
+@RestController
+@RequestMapping("/api")
+public class DemoController {
 
-    private final EntityManagerFactory emf;
+    private final ManualEntityManagerService manualService;
+    private final AutoCloseableEntityManagerService autoService;
 
-    public AutoCloseableEntityManagerService(EntityManagerFactory emf) {
-        this.emf = emf;
+    public DemoController(ManualEntityManagerService manualService,
+                          AutoCloseableEntityManagerService autoService) {
+        this.manualService = manualService;
+        this.autoService = autoService;
     }
 
-    public Optional<MyEntity> findById_tryWithResources(Long id) {
-        // jakarta.persistence.EntityManager extends AutoCloseable in modern Jakarta specs
-        try (EntityManager em = emf.createEntityManager()) {
-            EntityTransaction tx = em.getTransaction();
-            tx.begin();
-            try {
-                MyEntity entity = em.find(MyEntity.class, id);
-                tx.commit();
-                return Optional.ofNullable(entity);
-            } catch (RuntimeException ex) {
-                if (tx.isActive()) tx.rollback();
-                throw ex;
-            }
-        } // em.close() called automatically here
+    @PostMapping("/manual")
+    public ResponseEntity<MyEntity> createManual(@RequestBody MyEntity req) {
+        MyEntity saved = manualService.save_manualClose(req);
+        return ResponseEntity.created(URI.create("/api/manual/" + saved.getId())).body(saved);
     }
+
+    @GetMapping("/manual/{id}")
+    public ResponseEntity<MyEntity> getManual(@PathVariable Long id) {
+        Optional<MyEntity> e = manualService.findById_manualClose(id);
+        return e.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/autoclose")
+    public ResponseEntity<MyEntity> createAuto(@RequestBody MyEntity req) {
+        MyEntity saved = autoService.save_tryWithResources(req);
+        return ResponseEntity.created(URI.create("/api/autoclose/" + saved.getId())).body(saved);
+    }
+
+    @GetMapping("/autoclose/{id}")
+    public ResponseEntity<MyEntity> getAuto(@PathVariable Long id) {
+        Optional<MyEntity> e = autoService.findById_tryWithResources(id);
+        return e.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/health")
+    public String health() { return "OK"; }
 }
+```
 
+---
 
-------------------
-package com.example.demo.service;
+## `src/main/resources/application.yml`
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.EntityManagerFactory;
-import jakarta.persistence.EntityTransaction;
-import org.springframework.stereotype.Service;
+```yaml
+spring:
+  datasource:
+    url: jdbc:h2:mem:emdemo;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+```
 
-import java.util.Optional;
+---
 
-@Service
-public class AutoCloseableEntityManagerService {
+## `src/main/resources/data.sql`
 
-    private final EntityManagerFactory emf;
+```sql
+INSERT INTO MY_ENTITY (id, name) VALUES (1, 'Alice');
+INSERT INTO MY_ENTITY (id, name) VALUES (2, 'Bob');
+```
 
-    public AutoCloseableEntityManagerService(EntityManagerFactory emf) {
-        this.emf = emf;
-    }
+---
 
-    public Optional<MyEntity> findById_tryWithResources(Long id) {
-        // jakarta.persistence.EntityManager extends AutoCloseable in modern Jakarta specs
-        try (EntityManager em = emf.createEntityManager()) {
-            EntityTransaction tx = em.getTransaction();
-            tx.begin();
-            try {
-                MyEntity entity = em.find(MyEntity.class, id);
-                tx.commit();
-                return Optional.ofNullable(entity);
-            } catch (RuntimeException ex) {
-                if (tx.isActive()) tx.rollback();
-                throw ex;
-            }
-        } // em.close() called automatically here
-    }
+## `src/test/java/com/example/emdemo/EmDemoApplicationTests.java`
+
+```java
+package com.example.emdemo;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class EmDemoApplicationTests {
+    @Test
+    void contextLoads() {}
 }
-==================
+```
 
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="
-           http://maven.apache.org/POM/4.0.0
-           http://maven.apache.org/xsd/maven-4.0.0.xsd">
+---
 
-    <modelVersion>4.0.0</modelVersion>
+## `README.md`
 
-    <groupId>com.example</groupId>
-    <artifactId>em-demo</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>em-demo</name>
-    <description>Spring Boot demo showing application-managed EntityManager usage</description>
+```markdown
+# em-demo
 
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.1.6</version>
-        <relativePath/> <!-- lookup parent from repository -->
-    </parent>
+Minimal Spring Boot demo showing application-managed EntityManager patterns.
 
-    <properties>
-        <java.version>17</java.version>
-        <maven.compiler.release>${java.version}</maven.compiler.release>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
+## Run
 
-    <dependencies>
-        <!-- Web (for REST controller examples) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
+1. Build: `mvn -U -DskipTests package`
+2. Run: `mvn spring-boot:run` or run the generated jar `java -jar target/em-demo-0.0.1-SNAPSHOT.jar`
 
-        <!-- JPA (Jakarta) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
+## Endpoints
 
-        <!-- In-memory DB for testing/demo -->
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
+- `POST /api/manual` -> save via manual close pattern (body: JSON `{ "name": "X" }`)
+- `GET  /api/manual/{id}` -> read via manual close
+- `POST /api/autoclose` -> save via try-with-resources adapter pattern
+- `GET  /api/autoclose/{id}` -> read via try-with-resources
+- `GET  /api/health` -> health check
 
-        <!-- Lombok (optional) -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
+## Notes
 
-        <!-- Testing -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+- These services create **application-managed** `EntityManager` from the `EntityManagerFactory` and close them explicitly. Do **not** close container-managed `@PersistenceContext` injected `EntityManager`.
+- This demo uses a small adapter to allow try-with-resources where `EntityManager` isn't `AutoCloseable` in older APIs.
+```
 
-    <build>
-        <plugins>
-            <!-- Spring Boot plugin -->
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
+---
 
-            <!-- Compiler -->
-            <plugin>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-                <configuration>
-                    <release>${maven.compiler.release}</release>
-                </configuration>
-            </plugin>
+If you want, I can:
 
-            <!-- (Optional) Lombok delombok for builds that need it -->
-            <plugin>
-                <groupId>org.projectlombok</groupId>
-                <artifactId>lombok-maven-plugin</artifactId>
-                <version>1.18.28.0</version>
-                <executions>
-                    <execution>
-                        <phase>process-sources</phase>
-                        <goals>
-                            <goal>delombok</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-</project>
+* generate a downloadable ZIP with these files, or
+* change the project to use Java 21 / Spring Boot 3.2.x, or
+* add Swagger/OpenAPI endpoints for quick testing.
 
-
-
+Which would you like next?
