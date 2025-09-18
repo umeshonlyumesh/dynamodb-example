@@ -1,78 +1,232 @@
-package com.truist.fraud.config;
+package com.example.demo.service;
 
-import lombok.Getter;
-import lombok.Setter;
-import org.springframework.boot.context.properties.ConfigurationProperties;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.EntityTransaction;
+import org.springframework.stereotype.Service;
 
-@Getter
-@Setter
-@ConfigurationProperties(prefix = "fraud.mule")
-public class FraudProperties {
-    private boolean mtlsEnabled;
-    private String protocolType;
-    private String baseUrl;
-    private int connectTimeout;
-    private int readTimeout;
-    private String username;
-    private String password;
-    private String keyStore;
-    private String keyStoreType;
-    private String keyStorePassword;
-    private String trustStore;
-    private String trustStoreType;
-    private String trustStorePassword;
-}
-================
-package com.truist.fraud.config;
+import java.util.Optional;
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Bean;
+@Service
+public class ManualEntityManagerService {
 
-@AutoConfiguration
-@EnableConfigurationProperties(FraudProperties.class)
-public class FraudSdkAutoConfiguration {
+    private final EntityManagerFactory emf;
 
-    @Bean
-    public FraudDummyBean fraudDummyBean(FraudProperties props) {
-        // Debug print to verify properties are loaded
-        System.out.println("✅ Fraud Properties Loaded:");
-        System.out.println("   baseUrl = " + props.getBaseUrl());
-        System.out.println("   username = " + props.getUsername());
-        System.out.println("   connectTimeout = " + props.getConnectTimeout());
-        System.out.println("   readTimeout = " + props.getReadTimeout());
-
-        return new FraudDummyBean(props);
+    public ManualEntityManagerService(EntityManagerFactory emf) {
+        this.emf = emf;
     }
 
-    public static class FraudDummyBean {
-        private final FraudProperties props;
-        public FraudDummyBean(FraudProperties props) {
-            this.props = props;
-        }
-        public FraudProperties getProps() {
-            return props;
+    public Optional<MyEntity> findById_manualClose(Long id) {
+        EntityManager em = null;
+        EntityTransaction tx = null;
+        try {
+            em = emf.createEntityManager();     // application-managed EM
+            tx = em.getTransaction();
+            tx.begin();
+
+            MyEntity entity = em.find(MyEntity.class, id);
+
+            tx.commit();
+            return Optional.ofNullable(entity);
+        } catch (RuntimeException ex) {
+            if (tx != null && tx.isActive()) {
+                try { tx.rollback(); } catch (Exception rbEx) {
+                    // log rollback failure
+                }
+            }
+            throw ex; // rethrow or wrap
+        } finally {
+            if (em != null && em.isOpen()) {
+                try {
+                    em.close(); // MUST close application-managed EM
+                } catch (Exception closeEx) {
+                    // log close failure (rare)
+                }
+            }
         }
     }
 }
-===================
-spring:
-  application:
-    name: fraud-service
 
-fraud:
-  mule:
-    mtls-enabled: false
-    protocol-type: TLSv1.2
-    base-url: https://ait-ifmapp01:2347
-    connect-timeout: 40000
-    read-timeout: 50000
-    username: a663d3ab753a4fb1ad1b498db1503d56
-    password: fc5f65Ee466E4334afd03412a03c6c73
-    key-store: /opt/cert/entrustkeystore.p12
-    key-store-type: PKCS12
-    key-store-password: Truist2022##
-    trust-store: /opt/truststore/ite-entrusttruststore.p12
-    trust-store-type: PKCS12
-    trust-store-password: Truist2022##
+===============================
+
+package com.example.demo.service;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.EntityTransaction;
+import org.springframework.stereotype.Service;
+
+import java.util.Optional;
+
+@Service
+public class AutoCloseableEntityManagerService {
+
+    private final EntityManagerFactory emf;
+
+    public AutoCloseableEntityManagerService(EntityManagerFactory emf) {
+        this.emf = emf;
+    }
+
+    public Optional<MyEntity> findById_tryWithResources(Long id) {
+        // jakarta.persistence.EntityManager extends AutoCloseable in modern Jakarta specs
+        try (EntityManager em = emf.createEntityManager()) {
+            EntityTransaction tx = em.getTransaction();
+            tx.begin();
+            try {
+                MyEntity entity = em.find(MyEntity.class, id);
+                tx.commit();
+                return Optional.ofNullable(entity);
+            } catch (RuntimeException ex) {
+                if (tx.isActive()) tx.rollback();
+                throw ex;
+            }
+        } // em.close() called automatically here
+    }
+}
+
+
+------------------
+package com.example.demo.service;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.EntityTransaction;
+import org.springframework.stereotype.Service;
+
+import java.util.Optional;
+
+@Service
+public class AutoCloseableEntityManagerService {
+
+    private final EntityManagerFactory emf;
+
+    public AutoCloseableEntityManagerService(EntityManagerFactory emf) {
+        this.emf = emf;
+    }
+
+    public Optional<MyEntity> findById_tryWithResources(Long id) {
+        // jakarta.persistence.EntityManager extends AutoCloseable in modern Jakarta specs
+        try (EntityManager em = emf.createEntityManager()) {
+            EntityTransaction tx = em.getTransaction();
+            tx.begin();
+            try {
+                MyEntity entity = em.find(MyEntity.class, id);
+                tx.commit();
+                return Optional.ofNullable(entity);
+            } catch (RuntimeException ex) {
+                if (tx.isActive()) tx.rollback();
+                throw ex;
+            }
+        } // em.close() called automatically here
+    }
+}
+==================
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="
+           http://maven.apache.org/POM/4.0.0
+           http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>em-demo</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>em-demo</name>
+    <description>Spring Boot demo showing application-managed EntityManager usage</description>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.1.6</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.release>${java.version}</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- Web (for REST controller examples) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- JPA (Jakarta) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- In-memory DB for testing/demo -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Lombok (optional) -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Spring Boot plugin -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- Compiler -->
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                </configuration>
+            </plugin>
+
+            <!-- (Optional) Lombok delombok for builds that need it -->
+            <plugin>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok-maven-plugin</artifactId>
+                <version>1.18.28.0</version>
+                <executions>
+                    <execution>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>delombok</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+
 
