@@ -3,8 +3,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.util.Iterator;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public class JsonCleaner {
 
@@ -18,24 +18,27 @@ public class JsonCleaner {
         if (node.isObject()) {
             ObjectNode obj = (ObjectNode) node;
 
-            // Collect keys to remove (avoids deprecated concurrent modifications)
-            Iterator<Map.Entry<String, JsonNode>> fields = obj.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> entry = fields.next();
-                String key = entry.getKey();
-                JsonNode cleaned = clean(entry.getValue());
-
-                if (cleaned == null ||
-                    cleaned.isNull() ||
-                    (cleaned.isObject() && cleaned.size() == 0) ||
-                    (cleaned.isArray() && cleaned.size() == 0) ||
-                    (cleaned.isTextual() && cleaned.asText().isBlank())) {
-                    obj.remove(key);
+            // Collect keys to remove in a separate list
+            List<String> keysToRemove = new ArrayList<>();
+            var it = obj.fieldNames();
+            while (it.hasNext()) {
+                String key = it.next();
+                JsonNode child = clean(obj.get(key));
+                if (child == null ||
+                    child.isNull() ||
+                    (child.isObject() && child.isEmpty()) ||
+                    (child.isArray() && child.isEmpty()) ||
+                    (child.isTextual() && child.asText().isBlank())) {
+                    keysToRemove.add(key);
                 } else {
-                    obj.set(key, cleaned);
+                    obj.set(key, child);
                 }
             }
-            return obj.size() == 0 ? null : obj;
+
+            // Remove keys after iteration
+            obj.remove(keysToRemove);
+
+            return obj.isEmpty() ? null : obj;
         }
 
         if (node.isArray()) {
@@ -44,15 +47,15 @@ public class JsonCleaner {
                 JsonNode cleaned = clean(arr.get(i));
                 if (cleaned == null ||
                     cleaned.isNull() ||
-                    (cleaned.isObject() && cleaned.size() == 0) ||
-                    (cleaned.isArray() && cleaned.size() == 0) ||
+                    (cleaned.isObject() && cleaned.isEmpty()) ||
+                    (cleaned.isArray() && cleaned.isEmpty()) ||
                     (cleaned.isTextual() && cleaned.asText().isBlank())) {
                     arr.remove(i);
                 } else {
                     arr.set(i, cleaned);
                 }
             }
-            return arr.size() == 0 ? null : arr;
+            return arr.isEmpty() ? null : arr;
         }
 
         return node;
