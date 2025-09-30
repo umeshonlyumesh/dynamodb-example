@@ -11,30 +11,42 @@ public class JsonCleaner {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     public static JsonNode clean(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+
         if (node.isObject()) {
             ObjectNode obj = (ObjectNode) node;
+
+            // Collect keys to remove (avoids deprecated concurrent modifications)
             Iterator<Map.Entry<String, JsonNode>> fields = obj.fields();
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> entry = fields.next();
+                String key = entry.getKey();
                 JsonNode cleaned = clean(entry.getValue());
-                if (cleaned == null || cleaned.isNull() ||
-                        (cleaned.isObject() && cleaned.size() == 0) ||
-                        (cleaned.isArray() && cleaned.size() == 0) ||
-                        (cleaned.isTextual() && cleaned.asText().isBlank())) {
-                    fields.remove(); // drop empty
+
+                if (cleaned == null ||
+                    cleaned.isNull() ||
+                    (cleaned.isObject() && cleaned.size() == 0) ||
+                    (cleaned.isArray() && cleaned.size() == 0) ||
+                    (cleaned.isTextual() && cleaned.asText().isBlank())) {
+                    obj.remove(key);
                 } else {
-                    obj.set(entry.getKey(), cleaned);
+                    obj.set(key, cleaned);
                 }
             }
             return obj.size() == 0 ? null : obj;
-        } else if (node.isArray()) {
+        }
+
+        if (node.isArray()) {
             ArrayNode arr = (ArrayNode) node;
             for (int i = arr.size() - 1; i >= 0; i--) {
                 JsonNode cleaned = clean(arr.get(i));
-                if (cleaned == null || cleaned.isNull() ||
-                        (cleaned.isObject() && cleaned.size() == 0) ||
-                        (cleaned.isArray() && cleaned.size() == 0) ||
-                        (cleaned.isTextual() && cleaned.asText().isBlank())) {
+                if (cleaned == null ||
+                    cleaned.isNull() ||
+                    (cleaned.isObject() && cleaned.size() == 0) ||
+                    (cleaned.isArray() && cleaned.size() == 0) ||
+                    (cleaned.isTextual() && cleaned.asText().isBlank())) {
                     arr.remove(i);
                 } else {
                     arr.set(i, cleaned);
@@ -42,12 +54,13 @@ public class JsonCleaner {
             }
             return arr.size() == 0 ? null : arr;
         }
+
         return node;
     }
 
     public static String cleanRenderedJson(String renderedJson) throws Exception {
         JsonNode tree = mapper.readTree(renderedJson);
         JsonNode cleaned = clean(tree);
-        return mapper.writeValueAsString(cleaned);
+        return cleaned == null ? "{}" : mapper.writeValueAsString(cleaned);
     }
 }
