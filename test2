@@ -1,69 +1,686 @@
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+<!DOCTYPE html>
+<html>
+<head>
+    <title>REST Connector Library Documentation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #0052CC;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #0052CC;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #0052CC;
+        }
+        code {
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .info-panel {
+            background-color: #EAE6FF;
+            border-left: 4px solid #5243AA;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 3px;
+        }
+        .panel {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            margin: 15px 0;
+        }
+        .panel-heading {
+            background-color: #f0f0f0;
+            padding: 10px 15px;
+            border-bottom: 1px solid #ccc;
+            font-weight: bold;
+        }
+        .panel-body {
+            padding: 15px;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            background-color: #36B37E;
+            color: white;
+            border-radius: 3px;
+            margin-right: 10px;
+        }
+        .expand {
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            margin: 15px 0;
+        }
+        .expand-header {
+            background-color: #f5f5f5;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .expand-content {
+            padding: 15px;
+            display: none;
+        }
+        .toc {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 3px;
+        }
+        .toc ul {
+            list-style-type: disc;
+        }
+        .toc li {
+            margin: 5px 0;
+        }
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Make expand sections clickable
+            var expands = document.querySelectorAll('.expand-header');
+            expands.forEach(function(expand) {
+                expand.addEventListener('click', function() {
+                    var content = this.nextElementSibling;
+                    if (content.style.display === 'block') {
+                        content.style.display = 'none';
+                    } else {
+                        content.style.display = 'block';
+                    }
+                });
+            });
+        });
+    </script>
+</head>
+<body>
+    <h1>REST Connector Library</h1>
+    
+    <div class="info-panel">
+        <strong>Library Version:</strong> 0.0.1-SNAPSHOT
+    </div>
+    
+    <div class="toc">
+        <h3>Table of Contents</h3>
+        <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#requirements">Requirements</a></li>
+            <li><a href="#installation">Installation</a></li>
+            <li><a href="#quick-start">Quick Start Guide</a>
+                <ul>
+                    <li><a href="#simple-get">Making a Simple GET Request</a></li>
+                    <li><a href="#post-basic-auth">Making a POST Request with Basic Authentication</a></li>
+                </ul>
+            </li>
+            <li><a href="#auth-methods">Authentication Methods</a>
+                <ul>
+                    <li><a href="#no-auth">No Authentication</a></li>
+                    <li><a href="#basic-auth">Basic Authentication</a></li>
+                    <li><a href="#oauth2-client">OAuth 2.0 Client Credentials</a></li>
+                    <li><a href="#oauth2-password">OAuth 2.0 Password Grant</a></li>
+                    <li><a href="#mtls">Mutual TLS (mTLS)</a></li>
+                </ul>
+            </li>
+            <li><a href="#advanced-usage">Advanced Usage</a>
+                <ul>
+                    <li><a href="#request-builder">Using the Request Builder API</a></li>
+                    <li><a href="#custom-request">Custom Request Configuration</a></li>
+                    <li><a href="#async-requests">Asynchronous Requests</a></li>
+                </ul>
+            </li>
+            <li><a href="#configuration">Configuration</a>
+                <ul>
+                    <li><a href="#connection-settings">Connection Settings</a></li>
+                    <li><a href="#config-files">Using Configuration Files</a></li>
+                </ul>
+            </li>
+            <li><a href="#error-handling">Error Handling</a></li>
+            <li><a href="#api-reference">API Reference</a>
+                <ul>
+                    <li><a href="#core-classes">Core Interfaces and Classes</a></li>
+                    <li><a href="#auth-strategies">Authentication Strategies</a></li>
+                </ul>
+            </li>
+            <li><a href="#best-practices">Best Practices</a></li>
+            <li><a href="#troubleshooting">Troubleshooting</a></li>
+            <li><a href="#examples">Examples</a></li>
+            <li><a href="#support">Support and Feedback</a></li>
+        </ul>
+    </div>
+    
+    <h2 id="overview">Overview</h2>
+    
+    <p>The REST Connector is a flexible and extensible REST API client library for Java applications. It provides a simple and consistent way to make REST API calls with support for various authentication methods including Basic Auth, OAuth 2.0, SSL/TLS, and mTLS.</p>
+    
+    <div class="panel">
+        <div class="panel-heading">Key Features</div>
+        <div class="panel-body">
+            <ul>
+                <li>Support for all common HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)</li>
+                <li>Multiple authentication strategies</li>
+                <li>Synchronous and asynchronous request execution</li>
+                <li>Type-safe response handling with automatic JSON serialization/deserialization</li>
+                <li>Configurable connection and read timeouts</li>
+                <li>Comprehensive error handling</li>
+                <li>Built on Spring's RestTemplate for robust HTTP client capabilities</li>
+            </ul>
+        </div>
+    </div>
+    
+    <h2 id="requirements">Requirements</h2>
+    
+    <p>
+        <span class="status">Java Version</span> Java 21 or higher
+    </p>
+    
+    <p>
+        <span class="status">Framework</span> Spring Boot 3.x
+    </p>
+    
+    <h2 id="installation">Installation</h2>
+    
+    <p>Add the following dependency to your Maven project:</p>
+    
+    <pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;com.example&lt;/groupId&gt;
+    &lt;artifactId&gt;rest-connector&lt;/artifactId&gt;
+    &lt;version&gt;0.0.1-SNAPSHOT&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+    
+    <h2 id="quick-start">Quick Start Guide</h2>
+    
+    <h3 id="simple-get">Making a Simple GET Request</h3>
+    
+    <pre><code>// Create a connector with no authentication
+RestConnector connector = RestConnectorFactory.createNoAuthConnector();
 
-import java.util.ArrayList;
-import java.util.List;
+// Make a GET request
+RestResponse&lt;String&gt; response = connector.get(
+        "https://api.example.com/data",
+        null,
+        null,
+        String.class
+);
 
-public class JsonCleaner {
+// Process the response
+if (response.isSuccessful()) {
+    System.out.println("Response: " + response.getBody());
+} else {
+    System.err.println("Error: " + response.getStatusCode() + " - " + response.getRawBody());
+}</code></pre>
+    
+    <h3 id="post-basic-auth">Making a POST Request with Basic Authentication</h3>
+    
+    <pre><code>// Create a connector with basic authentication
+RestConnector connector = RestConnectorFactory.createBasicAuthConnector(
+        "username",
+        "password"
+);
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+// Create request headers
+Map&lt;String, String&gt; headers = new HashMap&lt;&gt;();
+headers.put("X-Custom-Header", "custom-value");
 
-    public static JsonNode clean(JsonNode node) {
-        if (node == null || node.isNull()) {
+// Create request body
+Map&lt;String, Object&gt; body = new HashMap&lt;&gt;();
+body.put("name", "John Doe");
+body.put("email", "john.doe@example.com");
+
+// Make a POST request
+RestResponse&lt;Map&gt; response = connector.post(
+        "https://api.example.com/users",
+        body,
+        headers,
+        Map.class
+);
+
+// Process the response
+if (response.isSuccessful()) {
+    Map responseBody = response.getBody();
+    System.out.println("User created with ID: " + responseBody.get("id"));
+} else {
+    System.err.println("Error creating user: " + response.getStatusCode());
+}</code></pre>
+    
+    <h2 id="auth-methods">Authentication Methods</h2>
+    
+    <p>The library supports multiple authentication methods to suit different API requirements.</p>
+    
+    <table>
+        <tr>
+            <th>Authentication Type</th>
+            <th>Description</th>
+            <th>When to Use</th>
+        </tr>
+        <tr>
+            <td>No Authentication</td>
+            <td>Simple requests without authentication</td>
+            <td>Public APIs or services that don't require authentication</td>
+        </tr>
+        <tr>
+            <td>Basic Authentication</td>
+            <td>Username and password sent in the Authorization header</td>
+            <td>Simple APIs with username/password authentication</td>
+        </tr>
+        <tr>
+            <td>OAuth 2.0 Client Credentials</td>
+            <td>Client ID and secret used to obtain an access token</td>
+            <td>Service-to-service authentication</td>
+        </tr>
+        <tr>
+            <td>OAuth 2.0 Password Grant</td>
+            <td>Username, password, client ID, and secret used to obtain an access token</td>
+            <td>User-based authentication with OAuth 2.0</td>
+        </tr>
+        <tr>
+            <td>Mutual TLS (mTLS)</td>
+            <td>Client and server authenticate each other using certificates</td>
+            <td>High-security environments requiring certificate-based authentication</td>
+        </tr>
+    </table>
+    
+    <h3 id="no-auth">No Authentication</h3>
+    
+    <pre><code>RestConnector connector = RestConnectorFactory.createNoAuthConnector();</code></pre>
+    
+    <h3 id="basic-auth">Basic Authentication</h3>
+    
+    <pre><code>RestConnector connector = RestConnectorFactory.createBasicAuthConnector(
+        "username",
+        "password"
+);</code></pre>
+    
+    <h3 id="oauth2-client">OAuth 2.0 Client Credentials</h3>
+    
+    <pre><code>RestConnector connector = RestConnectorFactory.createOAuth2ClientCredentialsConnector(
+        "https://auth.example.com/oauth/token",
+        "client-id",
+        "client-secret"
+);</code></pre>
+    
+    <h3 id="oauth2-password">OAuth 2.0 Password Grant</h3>
+    
+    <pre><code>RestConnector connector = RestConnectorFactory.createOAuth2PasswordConnector(
+        "https://auth.example.com/oauth/token",
+        "client-id",
+        "client-secret",
+        "username",
+        "password"
+);</code></pre>
+    
+    <h3 id="mtls">Mutual TLS (mTLS)</h3>
+    
+    <pre><code>RestConnector connector = RestConnectorFactory.createMtlsConnector(
+        "path/to/keystore.p12",
+        "keystore-password",
+        "path/to/truststore.jks",
+        "truststore-password"
+);</code></pre>
+    
+    <h2 id="advanced-usage">Advanced Usage</h2>
+    
+    <h3 id="request-builder">Using the Request Builder API</h3>
+    
+    <p>The library provides a fluent API for building and executing requests:</p>
+    
+    <pre><code>RestResponse&lt;User&gt; response = connector.post("users", User.class)
+    .body(new User("John Doe", "john.doe@example.com"))
+    .header("X-Custom-Header", "custom-value")
+    .queryParam("department", "engineering")
+    .execute();</code></pre>
+    
+    <h3 id="custom-request">Custom Request Configuration</h3>
+    
+    <p>For more control over the request, you can use the <code>RestRequest</code> builder:</p>
+    
+    <pre><code>// Create a custom request with all parameters
+Map&lt;String, String&gt; queryParams = new HashMap&lt;&gt;();
+queryParams.put("q", "search term");
+queryParams.put("limit", "10");
+
+Map&lt;String, String&gt; headers = new HashMap&lt;&gt;();
+headers.put("Accept-Language", "en-US");
+
+RestRequest request = RestRequest.builder()
+        .url("https://api.example.com/search")
+        .method(HttpMethod.GET)
+        .queryParams(queryParams)
+        .headers(headers)
+        .connectionTimeout(5000)
+        .readTimeout(5000)
+        .followRedirects(true)
+        .build();
+
+// Execute the request
+RestResponse&lt;Map&gt; response = connector.execute(request, Map.class);</code></pre>
+    
+    <h3 id="async-requests">Asynchronous Requests</h3>
+    
+    <p>For non-blocking operations, use the asynchronous API:</p>
+    
+    <pre><code>// Create a request
+RestRequest request = RestRequest.builder()
+        .url("https://api.example.com/data")
+        .method(HttpMethod.GET)
+        .build();
+
+// Execute the request asynchronously
+connector.executeAsync(request, String.class)
+        .thenAccept(response -> {
+            if (response.isSuccessful()) {
+                System.out.println("Async response: " + response.getBody());
+            } else {
+                System.err.println("Async error: " + response.getStatusCode());
+            }
+        })
+        .exceptionally(ex -> {
+            System.err.println("Async exception: " + ex.getMessage());
             return null;
-        }
+        });</code></pre>
+    
+    <h2 id="configuration">Configuration</h2>
+    
+    <h3 id="connection-settings">Connection Settings</h3>
+    
+    <p>You can configure connection settings for each request:</p>
+    
+    <table>
+        <tr>
+            <th>Setting</th>
+            <th>Description</th>
+            <th>Default Value</th>
+        </tr>
+        <tr>
+            <td>connectionTimeout</td>
+            <td>Maximum time to wait for connection establishment (ms)</td>
+            <td>30000 (30 seconds)</td>
+        </tr>
+        <tr>
+            <td>readTimeout</td>
+            <td>Maximum time to wait for data from the server (ms)</td>
+            <td>30000 (30 seconds)</td>
+        </tr>
+        <tr>
+            <td>followRedirects</td>
+            <td>Whether to automatically follow HTTP redirects</td>
+            <td>true</td>
+        </tr>
+    </table>
+    
+    <h3 id="config-files">Using Configuration Files</h3>
+    
+    <p>The library supports loading configuration from YAML files:</p>
+    
+    <pre><code># rest-connector-config.yaml
+connectors:
+  default:
+    connectionTimeout: 5000
+    readTimeout: 5000
+    followRedirects: true
+  
+  long-running:
+    connectionTimeout: 5000
+    readTimeout: 60000
+    followRedirects: true
 
-        if (node.isObject()) {
-            ObjectNode obj = (ObjectNode) node;
-
-            // Collect keys to remove in a separate list
-            List<String> keysToRemove = new ArrayList<>();
-            var it = obj.fieldNames();
-            while (it.hasNext()) {
-                String key = it.next();
-                JsonNode child = clean(obj.get(key));
-                if (child == null ||
-                    child.isNull() ||
-                    (child.isObject() && child.isEmpty()) ||
-                    (child.isArray() && child.isEmpty()) ||
-                    (child.isTextual() && child.asText().isBlank())) {
-                    keysToRemove.add(key);
-                } else {
-                    obj.set(key, child);
-                }
-            }
-
-            // Remove keys after iteration
-            obj.remove(keysToRemove);
-
-            return obj.isEmpty() ? null : obj;
-        }
-
-        if (node.isArray()) {
-            ArrayNode arr = (ArrayNode) node;
-            for (int i = arr.size() - 1; i >= 0; i--) {
-                JsonNode cleaned = clean(arr.get(i));
-                if (cleaned == null ||
-                    cleaned.isNull() ||
-                    (cleaned.isObject() && cleaned.isEmpty()) ||
-                    (cleaned.isArray() && cleaned.isEmpty()) ||
-                    (cleaned.isTextual() && cleaned.asText().isBlank())) {
-                    arr.remove(i);
-                } else {
-                    arr.set(i, cleaned);
-                }
-            }
-            return arr.isEmpty() ? null : arr;
-        }
-
-        return node;
+auth:
+  basic-auth:
+    type: basic
+    username: myuser
+    password: mypassword
+  
+  oauth2:
+    type: oauth2
+    tokenUrl: https://auth.example.com/oauth/token
+    clientId: my-client-id
+    clientSecret: my-client-secret
+    grantType: client_credentials</code></pre>
+    
+    <p>Loading configuration:</p>
+    
+    <pre><code>RestConnectorConfig config = RestConnectorConfigLoader.loadConfig("rest-connector-config.yaml");
+RestConnector connector = RestConnectorFactory.createConnector(config, "oauth2");</code></pre>
+    
+    <h2 id="error-handling">Error Handling</h2>
+    
+    <p>The library provides comprehensive error handling through the <code>RestConnectorException</code> class and the <code>RestResponse</code> object:</p>
+    
+    <pre><code>try {
+    RestResponse&lt;String&gt; response = connector.get("https://api.example.com/data", null, null, String.class);
+    
+    if (response.isSuccessful()) {
+        // Process successful response
+    } else if (response.isClientError()) {
+        // Handle client errors (4xx)
+        System.err.println("Client error: " + response.getStatusCode());
+    } else if (response.isServerError()) {
+        // Handle server errors (5xx)
+        System.err.println("Server error: " + response.getStatusCode());
     }
-
-    public static String cleanRenderedJson(String renderedJson) throws Exception {
-        JsonNode tree = mapper.readTree(renderedJson);
-        JsonNode cleaned = clean(tree);
-        return cleaned == null ? "{}" : mapper.writeValueAsString(cleaned);
+} catch (RestConnectorException e) {
+    // Handle connection or other errors
+    System.err.println("Error: " + e.getMessage());
+    if (e.getStatusCode() > 0) {
+        System.err.println("Status code: " + e.getStatusCode());
     }
-}
+}</code></pre>
+    
+    <h2 id="api-reference">API Reference</h2>
+    
+    <h3 id="core-classes">Core Interfaces and Classes</h3>
+    
+    <table>
+        <tr>
+            <th>Class/Interface</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td>RestConnector</td>
+            <td>Main interface for making REST API calls</td>
+        </tr>
+        <tr>
+            <td>RestConnectorFactory</td>
+            <td>Factory for creating RestConnector instances with different authentication methods</td>
+        </tr>
+        <tr>
+            <td>RestRequest</td>
+            <td>Represents a REST API request with all necessary parameters</td>
+        </tr>
+        <tr>
+            <td>RestResponse</td>
+            <td>Represents a REST API response with all relevant information</td>
+        </tr>
+        <tr>
+            <td>RestConnectorException</td>
+            <td>Exception thrown when an error occurs during a REST API call</td>
+        </tr>
+    </table>
+    
+    <h3 id="auth-strategies">Authentication Strategies</h3>
+    
+    <table>
+        <tr>
+            <th>Class</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td>NoAuthStrategy</td>
+            <td>Authentication strategy for requests without authentication</td>
+        </tr>
+        <tr>
+            <td>BasicAuthStrategy</td>
+            <td>Authentication strategy for Basic Authentication</td>
+        </tr>
+        <tr>
+            <td>OAuth2Strategy</td>
+            <td>Authentication strategy for OAuth 2.0 authentication</td>
+        </tr>
+        <tr>
+            <td>SslAuthStrategy</td>
+            <td>Authentication strategy for SSL/TLS client certificate authentication</td>
+        </tr>
+        <tr>
+            <td>CompositeAuthStrategy</td>
+            <td>Combines multiple authentication strategies</td>
+        </tr>
+    </table>
+    
+    <h2 id="best-practices">Best Practices</h2>
+    
+    <div class="panel">
+        <div class="panel-heading">Security Best Practices</div>
+        <div class="panel-body">
+            <ul>
+                <li>Always use HTTPS for production environments</li>
+                <li>Store sensitive credentials in secure configuration files or environment variables</li>
+                <li>Regularly rotate OAuth client secrets and other credentials</li>
+                <li>Use the shortest-lived tokens that are practical for your use case</li>
+                <li>Consider using mTLS for high-security environments</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <div class="panel-heading">Performance Best Practices</div>
+        <div class="panel-body">
+            <ul>
+                <li>Use appropriate timeout values for your specific API calls</li>
+                <li>Consider using asynchronous requests for non-blocking operations</li>
+                <li>Reuse connector instances when making multiple calls to the same API</li>
+                <li>Use connection pooling for high-volume applications</li>
+            </ul>
+        </div>
+    </div>
+    
+    <h2 id="troubleshooting">Troubleshooting</h2>
+    
+    <div class="expand">
+        <div class="expand-header">Common Issues and Solutions</div>
+        <div class="expand-content">
+            <h3>Connection Timeouts</h3>
+            
+            <p><strong>Problem</strong>: Requests are failing with connection timeouts.</p>
+            
+            <p><strong>Solution</strong>: Increase the connection timeout value or check network connectivity.</p>
+            
+            <pre><code>RestRequest request = RestRequest.builder()
+        .url("https://api.example.com/data")
+        .method(HttpMethod.GET)
+        .connectionTimeout(10000)  // Increase to 10 seconds
+        .build();</code></pre>
+            
+            <h3>SSL/TLS Certificate Issues</h3>
+            
+            <p><strong>Problem</strong>: SSL handshake failures or certificate validation errors.</p>
+            
+            <p><strong>Solution</strong>: Ensure your truststore contains the necessary CA certificates or configure the connector to use a custom SSL context.</p>
+            
+            <h3>OAuth Token Errors</h3>
+            
+            <p><strong>Problem</strong>: OAuth authentication fails with "invalid_client" or "invalid_grant" errors.</p>
+            
+            <p><strong>Solution</strong>: Verify client ID, client secret, username, and password. Check that the token URL is correct and the OAuth server is accessible.</p>
+        </div>
+    </div>
+    
+    <h2 id="examples">Examples</h2>
+    
+    <h3>Complete Example with Error Handling</h3>
+    
+    <pre><code>import com.example.restconnector.RestConnector;
+import com.example.restconnector.RestConnectorFactory;
+import com.example.restconnector.RestConnectorException;
+import com.example.restconnector.model.RestResponse;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class RestConnectorExample {
+    public static void main(String[] args) {
+        try {
+            // Create a connector with OAuth 2.0 client credentials
+            RestConnector connector = RestConnectorFactory.createOAuth2ClientCredentialsConnector(
+                    "https://auth.example.com/oauth/token",
+                    "client-id",
+                    "client-secret"
+            );
+            
+            // Create request headers
+            Map&lt;String, String&gt; headers = new HashMap&lt;&gt;();
+            headers.put("Accept", "application/json");
+            
+            // Create query parameters
+            Map&lt;String, String&gt; queryParams = new HashMap&lt;&gt;();
+            queryParams.put("limit", "10");
+            
+            // Make a GET request
+            RestResponse&lt;Map&gt; response = connector.get(
+                    "https://api.example.com/users",
+                    headers,
+                    queryParams,
+                    Map.class
+            );
+            
+            // Process the response
+            if (response.isSuccessful()) {
+                Map responseBody = response.getBody();
+                System.out.println("Users: " + responseBody);
+                System.out.println("Request time: " + response.getRequestTimeMs() + "ms");
+            } else if (response.isClientError()) {
+                System.err.println("Client error: " + response.getStatusCode());
+                System.err.println("Error details: " + response.getRawBody());
+            } else if (response.isServerError()) {
+                System.err.println("Server error: " + response.getStatusCode());
+                System.err.println("Error details: " + response.getRawBody());
+            }
+        } catch (RestConnectorException e) {
+            System.err.println("Error: " + e.getMessage());
+            if (e.getCause() != null) {
+                System.err.println("Cause: " + e.getCause().getMessage());
+            }
+        }
+    }
+}</code></pre>
+    
+    <h2 id="support">Support and Feedback</h2>
+    
+    <p>For support, please contact the development team at <a href="mailto:support@example.com">support@example.com</a>.</p>
+    
+    <p>We welcome feedback and contributions to improve the library. Please submit issues and pull requests to our <a href="https://github.com/example/rest-connector">GitHub repository</a>.</p>
+    
+    <div class="info-panel">
+        <strong>License:</strong> This project is licensed under the MIT License.
+    </div>
+</body>
+</html>
